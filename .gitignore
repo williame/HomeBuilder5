@@ -1,0 +1,6 @@
+.*
+
+# hide intellij cruft, as it likes to import the importmap as node modules to get code completion...
+*.iml
+/package*.json
+/node_modules/
