@@ -14,6 +14,7 @@
   </script>
   <style>
     html, body {
+      font-family: sans-serif;
       width: 100%;
       height: 100%;
       margin: 0;
@@ -21,7 +22,7 @@
     }
     .world_view_pane {
       background-color: dimgray;
-      position: relative;
+      position: relative; /* prep for when we have multiple panes */
     }
     .mouse_circle1 {
       position: absolute;
@@ -36,14 +37,26 @@
     .tool_palette {
       margin: 1px;
       position: absolute;
-      left: 0px;
-      top: 0px;
+      left: 0;
+      top: 0;
       background-color: slategray;
       border: 1px solid black;
       border-radius: 5%;
     }
     .tool_palette button {
       margin: 1px;
+    }
+    .label_renderer {
+      position: absolute;
+      left: 0;
+      top: 0;
+      pointer-events: none;
+    }
+    .measurement {
+      font-size: small;
+      background-color: wheat;
+      border-radius: 33%;
+      padding: 3px;
     }
   </style>
 </head>

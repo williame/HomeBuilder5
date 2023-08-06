@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 
 class WallTool {
 
@@ -12,9 +13,6 @@ class WallTool {
 
         this.snapToGrid = true;
         this.mousePos = null;
-        this.guides = new THREE.Group();
-        this.guides.visible = false;
-        worldView.scene.add(this.guides);
 
         // bind the event listeners to get a working 'this'
         this.eventListeners = {
@@ -22,6 +20,7 @@ class WallTool {
             mousemove: this.onMouseMove.bind(this),
             mouseup: this.onMouseUp.bind(this),
             mouseout: this.onMouseOut.bind(this),
+            keydown: this.onKeyDown.bind(this),
         }
     }
 
@@ -30,18 +29,17 @@ class WallTool {
         this.ok = false;
         this.startPoint = new THREE.Vector3();
         this.endPoint = new THREE.Vector3();
-        this.guides.clear();
-        this.guideWallLine = this.#createGuideLine(this.startPoint, this.endPoint, 0x0000FF);
-        this.guideWallLine.visible = false;
-        this.guides.add(this.guideWallLine);
-        this.guides.visible = true;
+        if (this.guideWallLine) {
+            this.guideWallLine.removeFromParent();
+            this.guideWallLine = null;
+        }
         this.worldView.needsUpdate();
     }
 
     enable() {
         const view = this.worldView.renderer.domElement;
         for (const [event_name, listener] of Object.entries(this.eventListeners)) {
-            view.addEventListener(event_name, listener);
+            (event_name.startsWith("key")? document: view).addEventListener(event_name, listener);
         }
         this.reset();
     }
@@ -49,32 +47,13 @@ class WallTool {
     disable() {
         const view = this.worldView.renderer.domElement;
         for (const [event_name, listener] of Object.entries(this.eventListeners)) {
-            view.removeEventListener(event_name, listener);
+            (event_name.startsWith("key")? document: view).removeEventListener(event_name, listener);
         }
         this.onMouseOut();
     }
 
-    #createGuideLine(start, end, color) {
-        const line = new THREE.Line(
-            new THREE.BufferGeometry(),
-            new THREE.LineBasicMaterial({color: color}));
-        this.#updateGuideLine(line, start, end);
-        return line;
-    }
-
-    #updateGuideLine(line, start, end, color=null) {
-        line.geometry.setFromPoints([
-            // we raise it up very slightly so that it doesn't z-fight a grid
-            start.clone().setY(start.y + Number.EPSILON),
-            end.clone().setY(end.y + Number.EPSILON)]);
-        if (color) {
-            line.material.color.setHex(color);
-        }
-        line.visible = true;
-        this.worldView.needsUpdate();
-    }
-
     updateGuides(mousePos) {
+        let hideGuideline = this.guideWallLine;
         if (this.placingEnd) {
             this.endPoint.copy(mousePos);
             this.ok = false;
@@ -91,11 +70,21 @@ class WallTool {
                 } else {
                     this.ok = true;
                 }
+                if (!this.guideWallLine) {
+                    this.guideWallLine = new GuideLine(this.worldView.scene, this.startPoint, this.endPoint, this.ok? 0x00ff00: 0xff0000);
+                } else {
+                    this.guideWallLine.update(this.startPoint, this.endPoint, this.ok? 0x00ff00: 0xff0000);
+                }
+                hideGuideline = false;
+                this.worldView.needsUpdate();
             }
-            this.#updateGuideLine(this.guideWallLine, this.startPoint, this.endPoint,
-                this.ok? 0x00ff00: 0xff0000);
         } else {
             this.startPoint.copy(mousePos);
+        }
+        if (hideGuideline) {
+            this.guideWallLine.removeFromParent();
+            this.guideWallLine = null;
+            this.worldView.needsUpdate();
         }
     }
 
@@ -141,7 +130,7 @@ class WallTool {
             if (this.placingEnd && this.ok) {
                 const line = [this.startPoint.clone(), this.endPoint.clone()];
                 this.worldView.world.walls.push(line);
-                this.worldView.world.scene.add(this.#createGuideLine(line[0], line[1], 0x00ff00));
+                new GuideLine(this.worldView.world.scene, line[0], line[1], 0x0000ff, false);
                 this.reset();
             } else {
                 this.placingEnd = true;
@@ -154,7 +143,59 @@ class WallTool {
 
     onMouseOut() {
         this.cursor.style.visibility = "hidden";
-        this.guides.visible = false;
+    }
+
+    onKeyDown(event) {
+        if (event.key === "Escape" && this.placingEnd && !(event.ctrlKey || event.altKey || event.shiftKey)) {
+            this.reset();
+        }
+    }
+}
+
+class GuideLine {
+    constructor(scene, start, end, color, showMeasurement=true) {
+        this.line = new THREE.Line(
+            new THREE.BufferGeometry(),
+            new THREE.LineBasicMaterial({color: color}));
+        this.showMeasurement = showMeasurement;
+        if (showMeasurement) {
+            this.line.layers.enableAll();
+            const label = document.createElement("div");
+            label.className = "measurement";
+            this.measurementLabel = new CSS2DObject(label);
+            this.measurementLabel.center.set(0, 0);
+            this.line.add(this.measurementLabel);
+        }
+        this.update(start, end);
+        scene.add(this.line);
+    }
+
+    update(start, end, color=null) {
+        this.line.geometry.setFromPoints([
+            // we raise it up very slightly so that it doesn't z-fight a grid
+            start.clone().setY(start.y + 0.001),
+            end.clone().setY(end.y + 0.001)]);
+        if (this.showMeasurement) {
+            const length = start.distanceTo(end);
+            if (length > 0) {
+                this.measurementLabel.position.copy(start.clone().lerp(end, 0.5));
+                this.measurementLabel.element.textContent = Number(length.toFixed(2));
+                this.measurementLabel.element.style.visibility = "visible";
+            } else {
+                this.measurementLabel.element.style.visibility = "hidden";
+            }
+        }
+        if (color) {
+            this.line.material.color.setHex(color);
+        }
+        this.line.visible = true;
+    }
+
+    removeFromParent() {
+        this.line.removeFromParent();
+        if (this.showMeasurement) {
+            this.measurementLabel.removeFromParent();
+        }
     }
 }
 

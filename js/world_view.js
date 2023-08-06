@@ -1,5 +1,6 @@
 import * as THREE from "three";
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
+import { CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import {WallTool} from "./wall_tool.js";
 
 const mousePos = new THREE.Vector2(), mouseRay = new THREE.Raycaster();
@@ -67,6 +68,10 @@ class WorldView {
 
         orbitButton.click();  // default tool
 
+        this.labelRenderer = new CSS2DRenderer();
+        this.labelRenderer.domElement.className = "label_renderer";
+        this.pane.appendChild(this.labelRenderer.domElement);
+
         document.body.appendChild(this.pane);
         window.addEventListener('resize', this.resize.bind(this));
         this.resize();
@@ -79,6 +84,7 @@ class WorldView {
         this.camera.updateProjectionMatrix();
         this.pane.style.width = width + "px";
         this.renderer.setSize(width, height);
+        this.labelRenderer.setSize(width, height);
         this.needsUpdate();
     }
 
@@ -93,6 +99,7 @@ class WorldView {
         this.animationFrameRequested = false;
         this.light.position.copy(this.camera.position);
         this.renderer.render(this.scene, this.camera);
+        this.labelRenderer.render(this.scene, this.camera);
     }
 
     getMouseRay(mouseEvent) {
