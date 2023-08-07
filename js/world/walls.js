@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import {deg90} from "./world.js";
+import {deg90, up} from "./world.js";
 import {Component} from "./Component.js";
 
 class Wall extends Component {
@@ -11,18 +11,15 @@ class Wall extends Component {
 
     constructor(world, start, end) {
         super(world);
-        this.start = start;
-        this.end = end;
-        this.rebuild();
+        this.line = new THREE.Line3();
+        this.set(start, end);
     }
 
-    setStart(start) {
+    set(start, end) {
         this.start = start;
-        this.rebuild();
-    }
-
-    setEnd(end) {
+        this.line.start.copy(start);
         this.end = end;
+        this.line.end.copy(end);
         this.rebuild();
     }
 
