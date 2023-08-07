@@ -1,7 +1,8 @@
 import * as THREE from "three";
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls';
-import { CSS2DRenderer } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
+import {OrbitControls} from 'three/examples/jsm/controls/OrbitControls';
+import {CSS2DRenderer} from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import {WallTool} from "./wall_tool.js";
+import {SelectTool} from "./select_tool.js";
 
 const mousePos = new THREE.Vector2(), mouseRay = new THREE.Raycaster();
 
@@ -10,6 +11,8 @@ class WorldView {
         this.render = this.render.bind(this);
 
         this.world = world;
+        this.world.views.push(this);
+
         this.pane = document.createElement("div");
         this.pane.className = "world_view_pane";
         this.pane.style.width = "100%";
@@ -31,11 +34,13 @@ class WorldView {
         this.renderer.setClearColor("dimgray");
         this.pane.appendChild(this.renderer.domElement);
 
+        // create tool palette
+
         const tool_palette = document.createElement("div");
         this.pane.appendChild(tool_palette);
         tool_palette.className = "tool_palette";
         let currentButton = null, currentTool = null;
-        const selectTool = (button, tool) => {
+        const changeTool = (button, tool) => {
             if (currentButton) {
                 currentButton.style.backgroundColor = null;
             }
@@ -48,6 +53,12 @@ class WorldView {
             tool.enable();
         }
 
+        const selectTool = new SelectTool(this);
+        const selectButton = document.createElement("button");
+        selectButton.textContent = "select";
+        selectButton.addEventListener("click", () => changeTool(selectButton, selectTool));
+        tool_palette.appendChild(selectButton);
+
         const orbitControls = new OrbitControls(this.camera, this.renderer.domElement);
         orbitControls.addEventListener('change', this.render.bind(this));
         orbitControls.enabled = false;
@@ -56,17 +67,17 @@ class WorldView {
             disable: () => orbitControls.enabled = false,
         };
         const orbitButton = document.createElement("button");
-        orbitButton.innerText = "orbit";
-        orbitButton.addEventListener("click", () => selectTool(orbitButton, orbitTool));
+        orbitButton.textContent = "orbit";
+        orbitButton.addEventListener("click", () => changeTool(orbitButton, orbitTool));
         tool_palette.appendChild(orbitButton);
 
         const wallTool = new WallTool(this);
         const wallButton = document.createElement("button");
-        wallButton.innerText = "wall";
-        wallButton.addEventListener("click", () => selectTool(wallButton, wallTool));
+        wallButton.textContent = "wall";
+        wallButton.addEventListener("click", () => changeTool(wallButton, wallTool));
         tool_palette.appendChild(wallButton);
 
-        orbitButton.click();  // default tool
+        wallButton.click();  // default tool
 
         this.labelRenderer = new CSS2DRenderer();
         this.labelRenderer.domElement.className = "label_renderer";

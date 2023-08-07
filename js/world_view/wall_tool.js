@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
+import {CSS2DObject} from 'three/examples/jsm/renderers/CSS2DRenderer.js';
+import {Wall} from '../world/walls.js';
 
 class WallTool {
 
@@ -38,16 +39,16 @@ class WallTool {
 
     enable() {
         const view = this.worldView.renderer.domElement;
-        for (const [event_name, listener] of Object.entries(this.eventListeners)) {
-            (event_name.startsWith("key")? document: view).addEventListener(event_name, listener);
+        for (const [name, listener] of Object.entries(this.eventListeners)) {
+            (name.startsWith("key")? document: view).addEventListener(name, listener);
         }
         this.reset();
     }
 
     disable() {
         const view = this.worldView.renderer.domElement;
-        for (const [event_name, listener] of Object.entries(this.eventListeners)) {
-            (event_name.startsWith("key")? document: view).removeEventListener(event_name, listener);
+        for (const [name, listener] of Object.entries(this.eventListeners)) {
+            (name.startsWith("key")? document: view).removeEventListener(name, listener);
         }
         this.onMouseOut();
     }
@@ -128,9 +129,7 @@ class WallTool {
     onMouseUp() {
         if (this.mousePos) {
             if (this.placingEnd && this.ok) {
-                const line = [this.startPoint.clone(), this.endPoint.clone()];
-                this.worldView.world.walls.push(line);
-                new GuideLine(this.worldView.world.scene, line[0], line[1], 0x0000ff, false);
+                new Wall(this.worldView.world, this.startPoint, this.endPoint);
                 this.reset();
             } else {
                 this.placingEnd = true;
@@ -143,6 +142,7 @@ class WallTool {
 
     onMouseOut() {
         this.cursor.style.visibility = "hidden";
+        this.reset();
     }
 
     onKeyDown(event) {
@@ -172,7 +172,7 @@ class GuideLine {
 
     update(start, end, color=null) {
         this.line.geometry.setFromPoints([
-            // we raise it up very slightly so that it doesn't z-fight a grid
+            // we raise it up very slightly so that it doesn't z-fight the grid
             start.clone().setY(start.y + 0.001),
             end.clone().setY(end.y + 0.001)]);
         if (this.showMeasurement) {

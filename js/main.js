@@ -1,6 +1,6 @@
 import * as THREE from 'three';
-import {World} from "./world.js";
-import {WorldView} from "./world_view.js";
+import {World} from "./world/world.js";
+import {WorldView} from "./world_view/world_view.js";
 
 const deg90 = THREE.MathUtils.degToRad(90);
 
