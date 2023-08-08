@@ -1,13 +1,13 @@
 import * as THREE from 'three';
 import {CSS2DObject} from 'three/examples/jsm/renderers/CSS2DRenderer.js';
-import {Wall} from '../world/walls.js';
+import {Wall, intersectY} from '../world/walls.js';
 import {deg90, up} from "../world/world.js";
+import {Tool} from "./tool.js";
 
-class WallTool {
+class WallTool extends Tool {
 
     constructor(worldView) {
-        this.worldView = worldView;
-        this.world = worldView.world;
+        super(worldView);
         this.floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0));
 
         this.cursor = document.createElement("div");
@@ -16,15 +16,6 @@ class WallTool {
 
         this.snap = true;
         this.mousePos = null;
-
-        // bind the event listeners to get a working 'this'
-        this.eventListeners = {
-            mousedown: this.onMouseDown.bind(this),
-            mousemove: this.onMouseMove.bind(this),
-            mouseup: this.onMouseUp.bind(this),
-            mouseout: this.onMouseOut.bind(this),
-            keydown: this.onKeyDown.bind(this),
-        }
     }
 
     reset() {
@@ -42,18 +33,12 @@ class WallTool {
     }
 
     enable() {
-        const view = this.worldView.renderer.domElement;
-        for (const [name, listener] of Object.entries(this.eventListeners)) {
-            (name.startsWith("key")? document: view).addEventListener(name, listener);
-        }
+        super.enable();
         this.reset();
     }
 
     disable() {
-        const view = this.worldView.renderer.domElement;
-        for (const [name, listener] of Object.entries(this.eventListeners)) {
-            (name.startsWith("key")? document: view).removeEventListener(name, listener);
-        }
+        super.disable();
         this.onMouseOut();
     }
 
@@ -290,38 +275,6 @@ class GuideLine {
             this.measurementLabel.removeFromParent();
         }
     }
-}
-
-// Line intercept math by Paul Bourke http://paulbourke.net/geometry/pointlineplane/
-// Determine the intersection point of two 3D lines on the Y plane
-// Return null if no intersection and false if the lines are parallel
-function intersectY(startA, endA, startB, endB, infiniteLines=true) {
-    // map three.js z to 2D x y
-    const x1 = startA.x, y1 = startA.z, x2 = endA.x, y2 = endA.z;
-    const x3 = startB.x, y3 = startB.z, x4 = endB.x, y4 = endB.z;
-    // Check if none of the lines are of length 0
-    if ((x1 === x2 && y1 === y2) || (x3 === x4 && y3 === y4)) {
-        return null;
-    }
-    const denominator = ((y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1));
-    if (denominator === 0) { // Lines are parallel
-        return false;
-    }
-    const ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denominator;
-    const ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denominator;
-
-    // is the intersection along the segments
-    if (!infiniteLines && (ua < 0 || ua > 1 || ub < 0 || ub > 1)) {
-        return null;
-    }
-    // return intersection
-    return {
-        point: new THREE.Vector3(x1 + ua * (x2 - x1),
-            startA.y + ua * (endA.y - startA.y),
-            y1 + ua * (y2 - y1)),  // back to 3D
-        inA: ua >= 0 && ua <= 1,
-        inB: ub >= 0 && ub <= 1,
-    };
 }
 
 export {WallTool};

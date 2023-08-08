@@ -1,18 +1,9 @@
-class SelectTool {
-    constructor(worldView) {
-        this.worldView = worldView;
-        this.highlighted = null;
-        this.eventListeners = {
-            mousedown: this.onMouseDown.bind(this),
-            mousemove: this.onMouseMove.bind(this),
-        }
-    }
+import {Tool} from "./tool.js";
 
-    enable() {
-        const view = this.worldView.renderer.domElement;
-        for (const [name, listener] of Object.entries(this.eventListeners)) {
-            view.addEventListener(name, listener);
-        }
+class SelectTool extends Tool {
+    constructor(worldView) {
+        super(worldView);
+        this.highlighted = null;
     }
 
     disableHighlight() {
@@ -24,9 +15,14 @@ class SelectTool {
 
     disable() {
         this.disableHighlight();
-        const view = this.worldView.renderer.domElement;
-        for (const [name, listener] of Object.entries(this.eventListeners)) {
-            view.removeEventListener(name, listener);
+        super.disable();
+    }
+
+    onKeyDown(event) {
+        if (event.key === "Backspace" && this.highlighted) {
+            this.world.removeComponent(this.world.getComponent(this.highlighted));
+            this.highlighted = null;
+            this.world.viewsNeedUpdate();
         }
     }
 
@@ -38,13 +34,13 @@ class SelectTool {
 
     onMouseDown(event) {
         const mouseRay = this.worldView.getMouseRay(event);
-        const intersections = mouseRay.intersectObjects(this.worldView.world.scene.children);
+        const intersections = mouseRay.intersectObjects(this.world.scene.children);
         const newTarget = intersections.length? intersections[0].object.userData.homeBuilderId: null;
         if (newTarget !== this.highlighted) {
             this.disableHighlight();
             if (newTarget) {
                 this.highlighted = newTarget;
-                this.worldView.world.getComponent(this.highlighted).rebuild(true);
+                this.world.getComponent(this.highlighted).rebuild(true);
             }
         }
     }
