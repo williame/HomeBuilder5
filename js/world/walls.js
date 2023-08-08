@@ -20,6 +20,9 @@ class Wall extends Component {
         this.line.start.copy(start);
         this.end = end;
         this.line.end.copy(end);
+        const direction = start.clone().sub(end);
+        this.angle = Math.abs(Math.round(THREE.MathUtils.radToDeg(new THREE.Vector2(direction.x, direction.z).angle())));
+        this.world.updateSnapDirections();
         this.rebuild();
     }
 

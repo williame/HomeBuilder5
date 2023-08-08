@@ -3,28 +3,38 @@ import {Wall} from "./walls.js";
 import {Component} from "./Component.js";
 
 const deg90 = THREE.MathUtils.degToRad(90);
-const up = new THREE.Vector3(0, 1, 0);
 
 class World {
 
     constructor() {
-        this.snapDirections = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 1),
-            new THREE.Vector3(-1, 0, 0), new THREE.Vector3(0, 0, -1)];
         this.homeBuilderIdSeq = 0;
         this.components = {};
         this.walls = {};
         this.scene = new THREE.Scene();
         this.views = [];
+        this.updateSnapDirections();
     }
 
-    isSnapDirection(start, end) {
-        const direction = start.clone().sub(end).normalize();
-        for (const snapDirection of this.snapDirections) {
-            if (Math.abs(snapDirection.dot(direction)) >= 1 - Number.EPSILON * 6) {
-                return true;
+    updateSnapDirections() {
+        const snapAngles = [0, 90, 180, 270];
+        for (const wall of Object.values(this.walls)) {
+            let dupe = false;
+            for (const existing of snapAngles) {
+                if (existing === wall.angle) {
+                    dupe = true;
+                    break;
+                }
+            }
+            if (!dupe) {
+                snapAngles.push(wall.angle, (wall.angle + 90) % 360, (wall.angle + 180) % 360, (wall.angle + 270) % 360);
             }
         }
-        return false;
+        this.snapDirections = [];
+        const origin = new THREE.Vector2();
+        for (const angle of snapAngles) {
+            const rotated = new THREE.Vector2(100).rotateAround(origin, THREE.MathUtils.degToRad(angle));
+            this.snapDirections.push(new THREE.Vector3(rotated.x, 0, rotated.y).normalize());
+        }
     }
 
     getComponent(id) {
@@ -55,4 +65,4 @@ class World {
     }
 }
 
-export {World, deg90, up}
+export {World, deg90}

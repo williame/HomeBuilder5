@@ -27,8 +27,9 @@ class WorldView {
         this.light = new THREE.DirectionalLight('white', 8);
         this.scene.add(this.light);
 
-        this.camera = new THREE.PerspectiveCamera(75, 1, 0.1, 100);
-        this.camera.position.set(7, 10, 8);
+        this.perspectiveCamera = new THREE.PerspectiveCamera(75, 1, 0.1, 100);
+        this.perspectiveCamera.position.set(7, 10, 8);
+        this.camera = this.perspectiveCamera;  // active camera; we haven't added any ortho yet
 
         this.renderer = new THREE.WebGLRenderer({antialias: true});
         this.renderer.setClearColor("dimgray");
@@ -59,7 +60,7 @@ class WorldView {
         selectButton.addEventListener("click", () => changeTool(selectButton, selectTool));
         tool_palette.appendChild(selectButton);
 
-        const orbitControls = new OrbitControls(this.camera, this.renderer.domElement);
+        const orbitControls = new OrbitControls(this.perspectiveCamera, this.renderer.domElement);
         orbitControls.addEventListener('change', this.render.bind(this));
         orbitControls.enabled = false;
         const orbitTool = {
@@ -89,10 +90,10 @@ class WorldView {
     }
 
     resize() {
-        const width = this.pane.clientWidth;
-        const height = this.pane.clientHeight;
-        this.camera.aspect = width / (height || 1);
-        this.camera.updateProjectionMatrix();
+        const width = this.pane.offsetWidth;
+        const height = this.pane.offsetHeight;
+        this.perspectiveCamera.aspect = width / (height || 1);
+        this.perspectiveCamera.updateProjectionMatrix();
         this.pane.style.width = width + "px";
         this.renderer.setSize(width, height);
         this.labelRenderer.setSize(width, height);
@@ -108,16 +109,16 @@ class WorldView {
 
     render() {
         this.animationFrameRequested = false;
-        this.light.position.copy(this.camera.position);
-        this.renderer.render(this.scene, this.camera);
-        this.labelRenderer.render(this.scene, this.camera);
+        this.light.position.copy(this.perspectiveCamera.position);
+        this.renderer.render(this.scene, this.perspectiveCamera);
+        this.labelRenderer.render(this.scene, this.perspectiveCamera);
     }
 
     getMouseRay(mouseEvent) {
         const targetRect = mouseEvent.target.getBoundingClientRect();
         mousePos.setX(((mouseEvent.clientX - targetRect.left) / targetRect.width) * 2 - 1);
         mousePos.setY(-((mouseEvent.clientY - targetRect.top) / targetRect.height) * 2 + 1);
-        mouseRay.setFromCamera(mousePos, this.camera);
+        mouseRay.setFromCamera(mousePos, this.perspectiveCamera);
         return mouseRay;
     }
 }

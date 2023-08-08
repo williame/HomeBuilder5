@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import {CSS2DObject} from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import {Wall, intersectY} from '../world/walls.js';
-import {deg90, up} from "../world/world.js";
 import {Tool} from "./tool.js";
 
 class WallTool extends Tool {
@@ -16,6 +15,7 @@ class WallTool extends Tool {
 
         this.snap = true;
         this.mousePos = null;
+        this.guides = {};
     }
 
     reset() {
@@ -25,10 +25,10 @@ class WallTool extends Tool {
         this.startSnap = null;
         this.endPoint = new THREE.Vector3();
         this.endSnap = null;
-        if (this.guideWallLine) {
-            this.guideWallLine.removeFromParent();
-            this.guideWallLine = null;
+        for (const guide of Object.values(this.guides)) {
+            guide.removeFromParent();
         }
+        this.guides = {}
         this.worldView.needsUpdate();
     }
 
@@ -42,48 +42,123 @@ class WallTool extends Tool {
         this.onMouseOut();
     }
 
-    updateGuides(mousePos, snap=undefined) {
-        let hideGuideline = this.guideWallLine;
+    updateGuides(mousePos, snaps=undefined) {
+        let hide = Object.keys(this.guides);
         this.mousePos = mousePos;
         if (this.placingEnd && mousePos) {
             this.endPoint.copy(mousePos);
-            if (typeof snap !== 'undefined') {
-                this.endSnap = snap;
+            this.ok &= this.endPoint.distanceTo(this.startPoint) > 0.5;  // shortest allowed
+            if (typeof snaps !== 'undefined') {
+                this.endSnaps = snaps;
+            } else {
+                snaps = this.endSnaps;
             }
             if (!this.endPoint.equals(this.startPoint)) {
-                if (!this.guideWallLine) {
-                    this.guideWallLine = new GuideLine(this.worldView.scene, this.startPoint, this.endPoint, this.ok ? 0x00ff00 : 0xff0000);
+                if (!this.guides.new_wall) {
+                    this.guides.new_wall = new GuideLine(this.worldView.scene, this.startPoint, this.endPoint, this.ok ? 0x00ff00 : 0xff0000);
                 } else {
-                    this.guideWallLine.update(this.startPoint, this.endPoint, this.ok ? 0x00ff00 : 0xff0000);
+                    this.guides.new_wall.update(this.startPoint, this.endPoint, this.ok ? 0x00ff00 : 0xff0000);
                 }
-                hideGuideline = false;
-                this.worldView.needsUpdate();
+                hide = hide.filter((name) => name !== "new_wall");
             }
         } else if (mousePos) {
             this.startPoint.copy(mousePos);
-            if (typeof snap !== 'undefined') {
-                this.startSnap = snap;
+            if (typeof snaps !== 'undefined') {
+                this.startSnaps = snaps;
+            } else {
+                snaps = this.startSnaps;
             }
         }
-        if (hideGuideline) {
-            this.guideWallLine.removeFromParent();
-            this.guideWallLine = null;
-            this.worldView.needsUpdate();
+        for (const snap of (snaps || [])) {
+            if (snap && (snap.type === "wall_align_start" || (snap.type === "wall_align_end"))) {
+                const guideName = snap.type + "_" + snap.wall.homeBuilderId;
+                const wallEnd = snap.type === "wall_align_start" ? snap.wall.start : snap.wall.end;
+                if (!this.guides[guideName]) {
+                    this.guides[guideName] = new GuideLine(this.worldView.scene, mousePos, wallEnd, 0xc0c0ff);
+                } else {
+                    this.guides[guideName].update(mousePos, wallEnd);
+                }
+                hide = hide.filter((name) => name !== guideName);
+            }
         }
+        for (const hideName of hide) {
+            this.guides[hideName].removeFromParent();
+            delete this.guides[hideName];
+        }
+        this.worldView.needsUpdate();
     }
 
     onMouseMove(event) {
         const mouseRay = this.worldView.getMouseRay(event);
         let x = event.clientX - this.worldView.pane.offsetLeft;
         let y = event.clientY - this.worldView.pane.offsetTop;
-        let mousePos = null, snap = null;
+        let mousePos = null, snaps = null;
         const intersection = mouseRay.ray.intersectPlane(this.floorPlane, new THREE.Vector3());
         this.ok = !!intersection;
         if(intersection) {
             intersection.setY(this.floorPlane.constant);
             const candidates = [];
             this.snap = !event.shiftKey;
-            if (!this.placingEnd && this.snap) {
+            // the ends and any midpoint of all existing walls
+            for (const wall of Object.values(this.world.walls)) {
+                //TODO NOT OK if the proposed wall intersects the current wall?
+                if (!this.placingEnd && this.snap) {
+                    const candidate = new THREE.Vector3();
+                    const directionSnapping = new THREE.Ray(), directionSnappingPoint = new THREE.Vector3();
+                    wall.line.closestPointToPoint(intersection, true, candidate);
+                    let distance = candidate.distanceTo(intersection);
+                    let snapType = "wall_closest_point";
+                    for (const end of [wall.start, wall.end]) {
+                        const endDistance = end.distanceTo(intersection);
+                        if (endDistance <= distance) {
+                            distance = endDistance;
+                            candidate.copy(end);
+                            snapType = "wall_" + (end.equals(wall.start) ? "start" : "end");
+                        } else if (!event.ctrlKey) {
+                            directionSnapping.origin.copy(end);
+                            for (const snapDirection of this.world.snapDirections) {
+                                directionSnapping.direction.copy(snapDirection);
+                                directionSnapping.closestPointToPoint(intersection, directionSnappingPoint);
+                                directionSnappingPoint.setY(intersection.y);
+                                const directionSnappingDistance = directionSnappingPoint.distanceTo(intersection);
+                                if (directionSnappingDistance < distance) {
+                                    distance = directionSnappingDistance;
+                                    candidate.copy(directionSnappingPoint);
+                                    snapType = "wall_align_" + (end.equals(wall.start) ? "start" : "end");
+                                }
+                            }
+                        }
+                    }
+                    if (distance < 1) {
+                        candidates.push({
+                            point: candidate.clone(),
+                            distance: distance,
+                            type: snapType,
+                            wall: wall,
+                        });
+                    }
+                } else {
+                    const snapEnd = new THREE.Vector3();
+                    for (const snapDirection of this.world.snapDirections) {
+                        snapEnd.copy(this.startPoint).add(snapDirection);
+                        const candidate = intersectY(this.startPoint, snapEnd, wall.start, wall.end);
+                        if (candidate && candidate.inB) {
+                            candidate.point.setY(intersection.y);
+                            const distance = candidate.point.distanceTo(intersection);
+                            if (distance < 1) {
+                                candidates.push({
+                                    point: candidate.point,
+                                    distance: distance,
+                                    type: "wall_snap_ray",
+                                    wall: wall,
+                                });
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            if (!candidates.length && this.snap && !this.placingEnd) {
                 // the four corners of the current square
                 for (const x of [0, 1]) {
                     for (const z of [0, 1]) {
@@ -96,68 +171,33 @@ class WallTool extends Tool {
                         });
                     }
                 }
-            }
-            // the ends and any midpoint of all existing walls
-            let hasWallCandidates = false;
-            for (const [_, wall] of Object.entries(this.world.walls)) {
-                //TODO NOT OK if the proposed wall intersects the current wall?
-                const candidate = new THREE.Vector3();
-                if (!this.placingEnd || !this.snap) {
-                    wall.line.closestPointToPoint(intersection, true, candidate);
-                    const distance = candidate.distanceTo(intersection);
-                    if (distance < 1) {
-                        candidates.push({
-                            point: candidate,
-                            distance: distance,
-                            type: "wall_closest_point",
-                            wall: wall,
-                        });
-                        hasWallCandidates = true;
-                    }
-                } else {
-                    const snapEnd = new THREE.Vector3();
-                    for (const snapDirection of this.world.snapDirections) {
-                        snapEnd.copy(this.startPoint).add(snapDirection);
-                        const candidate = intersectY(this.startPoint, snapEnd, wall.start, wall.end);
-                        if (candidate && candidate.inB) {
-                            const distance = candidate.point.distanceTo(intersection);
-                            if (distance < 1) {
-                                candidates.push({
-                                    point: candidate.point,
-                                    distance: distance,
-                                    type: "wall_snap_ray",
-                                    wall: wall,
-                                });
-                                hasWallCandidates = true;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-            if (!hasWallCandidates && this.snap && this.placingEnd) {
+            } else if (this.snap && this.placingEnd) {
                 // the continuation of the current line
                 const ray = new THREE.Ray(this.startPoint);
                 const candidate = new THREE.Vector3();
                 for (const snapDirection of this.world.snapDirections) {
                     ray.direction.copy(snapDirection);
                     ray.closestPointToPoint(intersection, candidate);
-                    const distance = candidate.distanceTo(intersection);
+                    candidate.setY(intersection.y);
                     candidates.push({
                         point: candidate.clone(),
-                        distance: distance,  // continuations allowed at any distance
+                        distance: candidate.distanceTo(intersection),  // continuations allowed at any distance
                         type: "continuation",
                     });
                 }
             }
             // do we have any candidates?
             if (candidates.length) {
+                // reduce to those snaps for the closest point
                 for (const candidate of candidates) {
-                    if (!snap || candidate.distance < snap.distance) {
-                        snap = candidate;
+                    if (snaps === null || candidate.distance < snaps[0].distance) {
+                        snaps = [candidate];
+                    } else if (candidate.point.distanceTo(snaps[0].point) <= 0.01) {  // really
+                        // close...
+                        snaps.push(candidate);
                     }
                 }
-                mousePos = snap.point;
+                mousePos = snaps[0].point;
             } else if (!this.snap) {
                 mousePos = intersection;
             } else {
@@ -170,7 +210,7 @@ class WallTool extends Tool {
                 y = -(point.y - 1) * this.worldView.pane.clientHeight / 2;
             }
         }
-        this.updateGuides(mousePos, snap);
+        this.updateGuides(mousePos, snaps);
         this.cursor.style.left = (x - this.cursor.clientWidth / 2) + "px";
         this.cursor.style.top = (y - this.cursor.clientHeight / 2) + "px";
         this.cursor.style.backgroundColor = mousePos? "#00ff0030": "#ff0000";
@@ -187,27 +227,17 @@ class WallTool extends Tool {
     onMouseUp() {
         if (this.mousePos) {
             if (this.placingEnd && this.ok) {
-                console.log("create wall", this.startPoint, this.startSnap, this.endPoint, this.endSnap);
                 new Wall(this.world, this.startPoint, this.endPoint);  // will add itself to world
-                // new snap direction for future walls to be parallel?
-                const startSnapType = (this.startSnap || {}).type || null;
-                const endSnapType = (this.endSnap || {}).type || null;
-                if (this.startSnap === null || this.endSnap === null) {
-                    const direction = this.startPoint.clone().sub(this.endPoint).normalize();
-                    let dupe = false;
-                    for (const existing of this.world.snapDirections) {
-                        if (existing.equals(direction)) {
-                            dupe = true;
-                            break;
-                        }
-                    }
-                    if (!dupe) {
-                        for (let step = 0; step < 4; step++) {
-                            this.world.snapDirections.push(direction.clone().normalize());
-                            direction.applyAxisAngle(up, deg90);
-                        }
-                    }
+                // printf debugging
+                let startSnapTypes = "";
+                for (const startSnap of this.startSnaps) {
+                    startSnapTypes += "|" + startSnap.type;
                 }
+                let endSnapTypes = "";
+                for (const endSnap of this.endSnaps) {
+                    endSnapTypes += "|" + endSnap.type;
+                }
+                console.log(startSnapTypes.substring(1) || null, "-->", endSnapTypes.substring(1) || null);
                 this.reset();
             } else {
                 this.placingEnd = true;
