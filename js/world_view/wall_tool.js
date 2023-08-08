@@ -2,19 +2,19 @@ import * as THREE from 'three';
 import {CSS2DObject} from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import {Wall} from '../world/walls.js';
 import {deg90, up} from "../world/world.js";
-import {MathUtils} from "three";
 
 class WallTool {
 
     constructor(worldView) {
         this.worldView = worldView;
+        this.world = worldView.world;
         this.floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0));
 
         this.cursor = document.createElement("div");
         this.cursor.className = "mouse_circle1";
         worldView.pane.appendChild(this.cursor);
 
-        this.snapToGrid = true;
+        this.snap = true;
         this.mousePos = null;
 
         // bind the event listeners to get a working 'this'
@@ -31,7 +31,9 @@ class WallTool {
         this.placingEnd = false;
         this.ok = false;
         this.startPoint = new THREE.Vector3();
+        this.startSnap = null;
         this.endPoint = new THREE.Vector3();
+        this.endSnap = null;
         if (this.guideWallLine) {
             this.guideWallLine.removeFromParent();
             this.guideWallLine = null;
@@ -55,24 +57,15 @@ class WallTool {
         this.onMouseOut();
     }
 
-    updateGuides(mousePos) {
+    updateGuides(mousePos, snap=undefined) {
         let hideGuideline = this.guideWallLine;
+        this.mousePos = mousePos;
         if (this.placingEnd && mousePos) {
             this.endPoint.copy(mousePos);
-            this.ok = false;
-            const direction = this.endPoint.clone().sub(this.startPoint).normalize();
-            if (direction.length() > 0) {
-                if (this.snapToGrid) {
-                    for (let i = 0, e = this.worldView.world.snapDirections.length; i < e; i++) {
-                        const snapDirection = this.worldView.world.snapDirections[i];
-                        if (Math.abs(snapDirection.dot(direction)) === 1) {
-                            this.ok = true;
-                            break;
-                        }
-                    }
-                } else {
-                    this.ok = true;
-                }
+            if (typeof snap !== 'undefined') {
+                this.endSnap = snap;
+            }
+            if (!this.endPoint.equals(this.startPoint)) {
                 if (!this.guideWallLine) {
                     this.guideWallLine = new GuideLine(this.worldView.scene, this.startPoint, this.endPoint, this.ok ? 0x00ff00 : 0xff0000);
                 } else {
@@ -83,6 +76,9 @@ class WallTool {
             }
         } else if (mousePos) {
             this.startPoint.copy(mousePos);
+            if (typeof snap !== 'undefined') {
+                this.startSnap = snap;
+            }
         }
         if (hideGuideline) {
             this.guideWallLine.removeFromParent();
@@ -95,12 +91,14 @@ class WallTool {
         const mouseRay = this.worldView.getMouseRay(event);
         let x = event.clientX - this.worldView.pane.offsetLeft;
         let y = event.clientY - this.worldView.pane.offsetTop;
+        let mousePos = null, snap = null;
         const intersection = mouseRay.ray.intersectPlane(this.floorPlane, new THREE.Vector3());
+        this.ok = !!intersection;
         if(intersection) {
             intersection.setY(this.floorPlane.constant);
             const candidates = [];
-            this.snapToGrid = !event.shiftKey;
-            if (this.snapToGrid) {
+            this.snap = !event.shiftKey;
+            if (!this.placingEnd && this.snap) {
                 // the four corners of the current square
                 for (const x of [0, 1]) {
                     for (const z of [0, 1]) {
@@ -116,10 +114,10 @@ class WallTool {
             }
             // the ends and any midpoint of all existing walls
             let hasWallCandidates = false;
-            for (const [_, wall] of Object.entries(this.worldView.world.walls)) {
+            for (const [_, wall] of Object.entries(this.world.walls)) {
                 //TODO NOT OK if the proposed wall intersects the current wall?
                 const candidate = new THREE.Vector3();
-                if (!this.placingEnd || !this.snapToGrid) {
+                if (!this.placingEnd || !this.snap) {
                     wall.line.closestPointToPoint(intersection, true, candidate);
                     const distance = candidate.distanceTo(intersection);
                     if (distance < 1) {
@@ -133,7 +131,7 @@ class WallTool {
                     }
                 } else {
                     const snapEnd = new THREE.Vector3();
-                    for (const snapDirection of this.worldView.world.snapDirections) {
+                    for (const snapDirection of this.world.snapDirections) {
                         snapEnd.copy(this.startPoint).add(snapDirection);
                         const candidate = intersectY(this.startPoint, snapEnd, wall.start, wall.end);
                         if (candidate && candidate.inB) {
@@ -152,56 +150,51 @@ class WallTool {
                     }
                 }
             }
-            if (!hasWallCandidates && this.snapToGrid && this.placingEnd) {
+            if (!hasWallCandidates && this.snap && this.placingEnd) {
                 // the continuation of the current line
                 const ray = new THREE.Ray(this.startPoint);
                 const candidate = new THREE.Vector3();
-                for (const snapDirection of this.worldView.world.snapDirections) {
+                for (const snapDirection of this.world.snapDirections) {
                     ray.direction.copy(snapDirection);
                     ray.closestPointToPoint(intersection, candidate);
                     const distance = candidate.distanceTo(intersection);
-                    if (distance < 1) {
-                        candidates.push({
-                            point: candidate.clone(),
-                            distance: distance,
-                            type: "continuation",
-                        });
-                    }
+                    candidates.push({
+                        point: candidate.clone(),
+                        distance: distance,  // continuations allowed at any distance
+                        type: "continuation",
+                    });
                 }
             }
             // do we have any candidates?
             if (candidates.length) {
-                let nearest = null;
                 for (const candidate of candidates) {
-                    if (nearest === null || candidate.distance < nearest.distance) {
-                        nearest = candidate;
+                    if (!snap || candidate.distance < snap.distance) {
+                        snap = candidate;
                     }
                 }
-                this.mousePos = nearest.point;
-            } else if (!this.snapToGrid) {
-                this.mousePos = intersection;
+                mousePos = snap.point;
+            } else if (!this.snap) {
+                mousePos = intersection;
             } else {
-                this.mousePos = null;
+                this.ok = false;
             }
-            if (this.mousePos) {
+            if (mousePos) {
                 // work out screen position
-                const point = this.mousePos.clone().project(this.worldView.camera);
+                const point = mousePos.clone().project(this.worldView.camera);
                 x = (point.x + 1) * this.worldView.pane.clientWidth / 2;
                 y = -(point.y - 1) * this.worldView.pane.clientHeight / 2;
             }
-        } else {
-            this.mousePos = null;
         }
-        this.updateGuides(this.mousePos);
+        this.updateGuides(mousePos, snap);
         this.cursor.style.left = (x - this.cursor.clientWidth / 2) + "px";
         this.cursor.style.top = (y - this.cursor.clientHeight / 2) + "px";
-        this.cursor.style.backgroundColor = this.mousePos? "#00ff0030": "#ff0000";
+        this.cursor.style.backgroundColor = mousePos? "#00ff0030": "#ff0000";
         this.cursor.style.visibility = "visible";
     }
 
     onMouseDown(event) {
         if (this.mousePos) {
-            this.snapToGrid = !event.shiftKey;
+            this.snap = !event.shiftKey;
             this.updateGuides(this.mousePos);
         }
     }
@@ -209,7 +202,27 @@ class WallTool {
     onMouseUp() {
         if (this.mousePos) {
             if (this.placingEnd && this.ok) {
-                new Wall(this.worldView.world, this.startPoint, this.endPoint);
+                console.log("create wall", this.startPoint, this.startSnap, this.endPoint, this.endSnap);
+                new Wall(this.world, this.startPoint, this.endPoint);  // will add itself to world
+                // new snap direction for future walls to be parallel?
+                const startSnapType = (this.startSnap || {}).type || null;
+                const endSnapType = (this.endSnap || {}).type || null;
+                if (this.startSnap === null || this.endSnap === null) {
+                    const direction = this.startPoint.clone().sub(this.endPoint).normalize();
+                    let dupe = false;
+                    for (const existing of this.world.snapDirections) {
+                        if (existing.equals(direction)) {
+                            dupe = true;
+                            break;
+                        }
+                    }
+                    if (!dupe) {
+                        for (let step = 0; step < 4; step++) {
+                            this.world.snapDirections.push(direction.clone().normalize());
+                            direction.applyAxisAngle(up, deg90);
+                        }
+                    }
+                }
                 this.reset();
             } else {
                 this.placingEnd = true;
@@ -241,7 +254,7 @@ class GuideLine {
         if (showMeasurement) {
             this.line.layers.enableAll();
             const label = document.createElement("div");
-            label.className = "measurement";
+            label.className = "guide_line_label";
             this.measurementLabel = new CSS2DObject(label);
             this.measurementLabel.center.set(0, 0);
             this.line.add(this.measurementLabel);
@@ -279,15 +292,16 @@ class GuideLine {
     }
 }
 
-// line intercept math by Paul Bourke http://paulbourke.net/geometry/pointlineplane/
-// Determine the intersection point of two line segments
-// Return FALSE if the lines don't intersect
+// Line intercept math by Paul Bourke http://paulbourke.net/geometry/pointlineplane/
+// Determine the intersection point of two 3D lines on the Y plane
+// Return null if no intersection and false if the lines are parallel
 function intersectY(startA, endA, startB, endB, infiniteLines=true) {
+    // map three.js z to 2D x y
     const x1 = startA.x, y1 = startA.z, x2 = endA.x, y2 = endA.z;
     const x3 = startB.x, y3 = startB.z, x4 = endB.x, y4 = endB.z;
     // Check if none of the lines are of length 0
     if ((x1 === x2 && y1 === y2) || (x3 === x4 && y3 === y4)) {
-        return false;
+        return null;
     }
     const denominator = ((y4 - y3) * (x2 - x1) - (x4 - x3) * (y2 - y1));
     if (denominator === 0) { // Lines are parallel
@@ -298,13 +312,13 @@ function intersectY(startA, endA, startB, endB, infiniteLines=true) {
 
     // is the intersection along the segments
     if (!infiniteLines && (ua < 0 || ua > 1 || ub < 0 || ub > 1)) {
-        return false;
+        return null;
     }
     // return intersection
     return {
         point: new THREE.Vector3(x1 + ua * (x2 - x1),
             startA.y + ua * (endA.y - startA.y),
-            y1 + ua * (y2 - y1)),
+            y1 + ua * (y2 - y1)),  // back to 3D
         inA: ua >= 0 && ua <= 1,
         inB: ub >= 0 && ub <= 1,
     };

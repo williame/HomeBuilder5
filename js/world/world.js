@@ -6,6 +6,7 @@ const deg90 = THREE.MathUtils.degToRad(90);
 const up = new THREE.Vector3(0, 1, 0);
 
 class World {
+
     constructor() {
         this.snapDirections = [new THREE.Vector3(1, 0, 0), new THREE.Vector3(0, 0, 1),
             new THREE.Vector3(-1, 0, 0), new THREE.Vector3(0, 0, -1)];
