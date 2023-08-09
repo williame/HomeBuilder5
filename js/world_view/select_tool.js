@@ -20,7 +20,7 @@ class SelectTool extends Tool {
 
     onKeyDown(event) {
         if (event.key === "Backspace" && this.highlighted) {
-            this.world.removeComponent(this.world.getComponent(this.highlighted));
+            this.world.getComponent(this.highlighted).destroy();
             this.highlighted = null;
             this.world.viewsNeedUpdate();
         }

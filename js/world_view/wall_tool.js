@@ -1,13 +1,13 @@
 import * as THREE from 'three';
 import {CSS2DObject} from 'three/examples/jsm/renderers/CSS2DRenderer.js';
-import {Wall, intersectY} from '../world/walls.js';
+import {Wall} from '../world/wall.js';
 import {Tool} from "./tool.js";
+import {intersectY} from "../world/level.js";
 
 class WallTool extends Tool {
 
     constructor(worldView) {
         super(worldView);
-        this.floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0));
 
         this.cursor = document.createElement("div");
         this.cursor.className = "mouse_circle1";
@@ -22,9 +22,9 @@ class WallTool extends Tool {
         this.placingEnd = false;
         this.ok = false;
         this.startPoint = new THREE.Vector3();
-        this.startSnap = null;
+        this.startSnaps = null;
         this.endPoint = new THREE.Vector3();
-        this.endSnap = null;
+        this.endSnaps = null;
         for (const guide of Object.values(this.guides)) {
             guide.removeFromParent();
         }
@@ -43,7 +43,18 @@ class WallTool extends Tool {
     }
 
     updateGuides(mousePos, snaps=undefined) {
-        let hide = Object.keys(this.guides);
+        const guides = this.guides, hide = Object.keys(this.guides), scene = this.worldView.scene;
+        function addGuide(name, start, end, color) {
+            if (name in guides) {
+                guides[name].update(start, end, color);
+                const hideIdx = hide.indexOf(name);
+                if (hideIdx !== -1) {
+                    hide.splice(hideIdx, 1);
+                }
+            } else {
+                guides[name] = new GuideLine(scene, start, end, color);
+            }
+        }
         this.mousePos = mousePos;
         if (this.placingEnd && mousePos) {
             this.endPoint.copy(mousePos);
@@ -54,12 +65,7 @@ class WallTool extends Tool {
                 snaps = this.endSnaps;
             }
             if (!this.endPoint.equals(this.startPoint)) {
-                if (!this.guides.new_wall) {
-                    this.guides.new_wall = new GuideLine(this.worldView.scene, this.startPoint, this.endPoint, this.ok ? 0x00ff00 : 0xff0000);
-                } else {
-                    this.guides.new_wall.update(this.startPoint, this.endPoint, this.ok ? 0x00ff00 : 0xff0000);
-                }
-                hide = hide.filter((name) => name !== "new_wall");
+                addGuide("new_wall", this.startPoint, this.endPoint, this.ok ? 0x00ff00 : 0xff0000);
             }
         } else if (mousePos) {
             this.startPoint.copy(mousePos);
@@ -72,13 +78,15 @@ class WallTool extends Tool {
         for (const snap of (snaps || [])) {
             if (snap && (snap.type === "wall_align_start" || (snap.type === "wall_align_end"))) {
                 const guideName = snap.type + "_" + snap.wall.homeBuilderId;
-                const wallEnd = snap.type === "wall_align_start" ? snap.wall.start : snap.wall.end;
-                if (!this.guides[guideName]) {
-                    this.guides[guideName] = new GuideLine(this.worldView.scene, mousePos, wallEnd, 0xc0c0ff);
-                } else {
-                    this.guides[guideName].update(mousePos, wallEnd);
-                }
-                hide = hide.filter((name) => name !== guideName);
+                const wallEnd = snap.type === "wall_align_start" ? snap.wall.start: snap.wall.end;
+                addGuide(guideName, mousePos, wallEnd, 0xc0c0ff);
+            } else if (snap && snap.type === "wall_align_intersection") {
+                let guideName = snap.type + "_" + snap.walls.wallA + "_" + snap.walls.wallAEnd;
+                let wallEnd = snap.walls.wallAEnd === "start"? snap.walls.wallA.start: snap.walls.wallA.end;
+                addGuide(guideName, mousePos, wallEnd, 0xc0c0ff);
+                guideName = snap.type + "_" + snap.walls.wallB + "_" + snap.walls.wallBEnd;
+                wallEnd = snap.walls.wallBEnd === "start"? snap.walls.wallB.start: snap.walls.wallB.end;
+                addGuide(guideName, mousePos, wallEnd, 0xc0c0ff);
             }
         }
         for (const hideName of hide) {
@@ -93,18 +101,36 @@ class WallTool extends Tool {
         let x = event.clientX - this.worldView.pane.offsetLeft;
         let y = event.clientY - this.worldView.pane.offsetTop;
         let mousePos = null, snaps = null;
-        const intersection = mouseRay.ray.intersectPlane(this.floorPlane, new THREE.Vector3());
+        const intersection = mouseRay.ray.intersectPlane(this.world.activeLevel.floorPlane, new THREE.Vector3());
         this.ok = !!intersection;
         if(intersection) {
-            intersection.setY(this.floorPlane.constant);
+            intersection.setY(this.world.activeLevel.floorPlane.constant);
             const candidates = [];
             this.snap = !event.shiftKey;
+            let nearestWallAlignIntersection = 0.1;
+            let hasWallAlignIntersection = false;
+            if (this.snap) {
+                for (const wallAlignIntersection of this.world.activeLevel.snapWallAlignIntersections) {
+                    const distance = intersection.distanceTo(wallAlignIntersection.point);
+                    if (distance < nearestWallAlignIntersection) {
+                        candidates.push({
+                            point: wallAlignIntersection.point,
+                            distance: distance,
+                            type: "wall_align_intersection",
+                            walls: wallAlignIntersection,
+                        });
+                        nearestWallAlignIntersection = distance;
+                        hasWallAlignIntersection = true;
+                    }
+                }
+            }
             // the ends and any midpoint of all existing walls
-            for (const wall of Object.values(this.world.walls)) {
+            for (const wall of this.world.activeLevel.walls.values) {
                 //TODO NOT OK if the proposed wall intersects the current wall?
                 if (!this.placingEnd && this.snap) {
                     const candidate = new THREE.Vector3();
-                    const directionSnapping = new THREE.Ray(), directionSnappingPoint = new THREE.Vector3();
+                    const directionSnapping = new THREE.Ray(),
+                        directionSnappingPoint = new THREE.Vector3();
                     wall.line.closestPointToPoint(intersection, true, candidate);
                     let distance = candidate.distanceTo(intersection);
                     let snapType = "wall_closest_point";
@@ -114,9 +140,9 @@ class WallTool extends Tool {
                             distance = endDistance;
                             candidate.copy(end);
                             snapType = "wall_" + (end.equals(wall.start) ? "start" : "end");
-                        } else if (!event.ctrlKey) {
+                        } else if (!hasWallAlignIntersection && !event.ctrlKey) {
                             directionSnapping.origin.copy(end);
-                            for (const snapDirection of this.world.snapDirections) {
+                            for (const snapDirection of this.world.activeLevel.snapDirections) {
                                 directionSnapping.direction.copy(snapDirection);
                                 directionSnapping.closestPointToPoint(intersection, directionSnappingPoint);
                                 directionSnappingPoint.setY(intersection.y);
@@ -139,7 +165,7 @@ class WallTool extends Tool {
                     }
                 } else {
                     const snapEnd = new THREE.Vector3();
-                    for (const snapDirection of this.world.snapDirections) {
+                    for (const snapDirection of this.world.activeLevel.snapDirections) {
                         snapEnd.copy(this.startPoint).add(snapDirection);
                         const candidate = intersectY(this.startPoint, snapEnd, wall.start, wall.end);
                         if (candidate && candidate.inB) {
@@ -175,7 +201,7 @@ class WallTool extends Tool {
                 // the continuation of the current line
                 const ray = new THREE.Ray(this.startPoint);
                 const candidate = new THREE.Vector3();
-                for (const snapDirection of this.world.snapDirections) {
+                for (const snapDirection of this.world.activeLevel.snapDirections) {
                     ray.direction.copy(snapDirection);
                     ray.closestPointToPoint(intersection, candidate);
                     candidate.setY(intersection.y);
@@ -230,11 +256,11 @@ class WallTool extends Tool {
                 new Wall(this.world, this.startPoint, this.endPoint);  // will add itself to world
                 // printf debugging
                 let startSnapTypes = "";
-                for (const startSnap of this.startSnaps) {
+                for (const startSnap of (this.startSnaps || [])) {
                     startSnapTypes += "|" + startSnap.type;
                 }
                 let endSnapTypes = "";
-                for (const endSnap of this.endSnaps) {
+                for (const endSnap of (this.endSnaps || [])) {
                     endSnapTypes += "|" + endSnap.type;
                 }
                 console.log(startSnapTypes.substring(1) || null, "-->", endSnapTypes.substring(1) || null);

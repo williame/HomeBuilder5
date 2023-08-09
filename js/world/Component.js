@@ -1,10 +1,13 @@
 import * as THREE from 'three';
 
 class Component {
+
     constructor(world) {
         this.world = world;
-        this.homeBuilderId = this.constructor.name + ++world.homeBuilderIdSeq;
-        world.addComponent(this);
+        this.homeBuilderId = this.constructor.name + "_" + ++world.homeBuilderIdSeq;
+        this.world.addComponent(this);
+        this.level = world.activeLevel;
+        this.level.addComponent(this);
         this.objects = {};
     }
 
@@ -30,6 +33,42 @@ class Component {
         }
         this.objects = {};
     }
+
+    destroy() {
+        this.world.removeComponent(this);
+        this.level.removeComponent(this);
+        this.removeAllObjects();
+    }
 }
 
-export {Component};
+class ComponentCollection {
+    constructor() {
+        this.components = {};
+        this.#updateIterators();
+    }
+
+    getComponent(id) {
+        return this.components[id];
+    }
+
+    addComponent(component) {
+        console.assert(component instanceof Component, "not Component", component);
+        console.assert(!this.components.hasOwnProperty(component.homeBuilderId), "Component add twice", component);
+        this.components[component.homeBuilderId] = component;
+        this.#updateIterators();
+    }
+
+    removeComponent(component) {
+        console.assert(component instanceof Component, "not Component", component);
+        delete this.components[component.homeBuilderId];
+        this.#updateIterators();
+    }
+
+    #updateIterators() {
+        this.keys = Object.keys(this.components);
+        this.values = Object.values(this.components);
+        this.entries = Object.entries(this.components);
+    }
+}
+
+export {Component, ComponentCollection};
