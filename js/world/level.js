@@ -32,10 +32,10 @@ class Level {
             }
         }
         // change snap angles into directions
-        this.snapDirections = snapAngles.map(angleToDirection);
+        this.snapDirections = snapAngles.map(angleYToDirection);
         // compute all the wall align intersections
         const wallAlignIntersections = {};
-        const alignDirections = snapAngles.filter((angle) => angle < 180).map(angleToDirection);
+        const alignDirections = snapAngles.filter((angle) => angle < 180).map(angleYToDirection);
         const wallEnd = new THREE.Vector3(), otherEnd = new THREE.Vector3();
         for (const wall of walls) {
             for (const other of walls) {
@@ -74,8 +74,10 @@ class Level {
                                                 sumDistance: sumDistance,
                                                 wallA: wall,
                                                 wallAEnd: wallStartDistance < wallEndDistance ? "start" : "end",
+                                                wallADirection: wallDirection,
                                                 wallB: other,
                                                 wallBEnd: otherStartDistance < otherEndDistance ? "start" : "end",
+                                                wallBDirection: otherDirection,
                                             };
                                         }
                                     }
@@ -87,6 +89,17 @@ class Level {
             }
         }
         this.snapWallAlignIntersections = Object.values(wallAlignIntersections);
+    }
+
+    roundToPrecision(val) {
+        if (val instanceof Number) {
+            return Math.round(val * 1000) / 1000;
+        } else if (val instanceof THREE.Vector3) {
+            return val.set(Math.round(val.x * 1000) / 1000,
+                Math.round(val.y * 1000) / 1000,
+                Math.round(val.z * 1000) / 1000);
+        }
+        throw new Error("cannot handle roundToPrecision(" + (typeof val) + ": " + val);
     }
 
     updateWalls() {
@@ -121,9 +134,13 @@ class Level {
     }
 }
 
-function angleToDirection(angle) {
+function angleYToDirection(angle) {
     const rotated = new THREE.Vector2(100).rotateAround(origin, THREE.MathUtils.degToRad(angle));
     return new THREE.Vector3(rotated.x, 0, rotated.y).normalize();
+}
+
+function lineToAngleY(start, end) {
+    return Math.abs(Math.round(THREE.MathUtils.radToDeg(new THREE.Vector2(start.x - end.x, start.z - end.z).angle())));
 }
 
 // Line intercept math by Paul Bourke http://paulbourke.net/geometry/pointlineplane/
@@ -158,4 +175,4 @@ function intersectY(startA, endA, startB, endB, infiniteLines = true) {
     };
 }
 
-export {Level, intersectY};
+export {Level, intersectY, lineToAngleY};

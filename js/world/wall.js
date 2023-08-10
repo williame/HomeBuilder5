@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {deg90} from "./world.js";
 import {Component} from "./Component.js";
+import {lineToAngleY} from "./level.js";
 
 class Wall extends Component {
     height = 2.4;
@@ -19,8 +20,7 @@ class Wall extends Component {
         this.start = start;
         this.end = end;
         this.line.set(start, end);
-        const direction = start.clone().sub(end);
-        this.angle = Math.abs(Math.round(THREE.MathUtils.radToDeg(new THREE.Vector2(direction.x, direction.z).angle())));
+        this.angle = lineToAngleY(start, end);
         this.level.updateWalls();
         this.rebuild();
     }
