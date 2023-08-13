@@ -10,8 +10,9 @@ class Wall extends Component {
     highlightMaterial = new THREE.MeshStandardMaterial({color: 0xff3030});
     highlightEdgesMaterial = new THREE.LineBasicMaterial({color: 0xffc0c0});
 
-    constructor(world, start, end) {
+    constructor(world, start, end, angle) {
         super(world);
+        this.angle = angle;
         this.line = new THREE.Line3();
         this.set(start, end);
     }
@@ -20,7 +21,12 @@ class Wall extends Component {
         this.start = start;
         this.end = end;
         this.line.set(start, end);
-        this.angle = lineToAngleY(start, end);
+        if (typeof this.angle === "undefined") {
+            this.angle = lineToAngleY(start, end);
+        } else {
+            console.assert(Math.abs(this.angle - lineToAngleY(start, end)) <= 1,
+                "angle too far", lineToAngleY(start, end), this);
+        }
         this.level.updateWalls();
         this.rebuild();
     }

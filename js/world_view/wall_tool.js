@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import {CSS2DObject} from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import {Wall} from '../world/wall.js';
 import {Tool} from "./tool.js";
-import {intersectY} from "../world/level.js";
+import {intersectY, AngleYDirection} from "../world/level.js";
 
 class WallTool extends Tool {
 
@@ -19,7 +19,7 @@ class WallTool extends Tool {
     reset() {
         this.placingEnd = false;
         this.ok = false;
-        this.startPoint = new THREE.Vector3();
+        this.startPoint = this.mousePos? this.mousePos.clone(): new THREE.Vector3();
         this.startSnaps = null;
         this.endPoint = new THREE.Vector3();
         this.endSnaps = null;
@@ -49,16 +49,15 @@ class WallTool extends Tool {
             if (!start || !end) {
                 console.error("bad guide!", name, start, end, new Error().stack);
             }
+            console.assert(!direction || direction instanceof AngleYDirection, direction);
             const directionKey = direction? "" + direction.x + "_" + direction.y + "_" + direction.z: false;
-            if (directionKey) {
-                if (directionKey in guidesByDirection) {
-                    const existing = guidesByDirection[directionKey];
-                    if (existing.name !== name) {
-                        if (existing.start.distanceTo(existing.end) < start.distanceTo(end)) {
-                            return;
-                        }
-                        hide.push(existing.name);
-                    }
+            const existing = directionKey? guidesByDirection[directionKey]: false;
+            if (existing && existing.name !== name) {
+                if (existing.start.distanceTo(existing.end) < start.distanceTo(end)) {
+                    return;
+                }
+                if (hide.indexOf(existing.name) === -1) {
+                    hide.push(existing.name);
                 }
             }
             if (name in guides) {
@@ -109,13 +108,14 @@ class WallTool extends Tool {
             }
         }
         for (const hideName of hide) {
-            this.guides[hideName].removeFromParent();
-            delete this.guides[hideName];
+            guides[hideName].removeFromParent();
+            delete guides[hideName];
         }
         this.worldView.needsUpdate();
     }
 
-    findSnapPoints(point, maxDistanceThreshold, snap, placingEnd, isContinuation=false) {
+    findSnapPoints(point, maxDistanceThreshold, isContinuation=false) {
+        const snap = this.snap, placingEnd = this.placingEnd;
         const candidates = [];
         let hasWallAlignIntersection = false;
         if (snap) {
@@ -160,11 +160,10 @@ class WallTool extends Tool {
                 // snapping to alignments from ends that are far away
                 if (distance >= 1 && !hasWallAlignIntersection) {
                     for (const end of [wall.start, wall.end]) {
-                        const directionSnapping = new THREE.Ray();
-                        directionSnapping.origin.copy(end);
+                        const directionSnapping = new THREE.Line3(end);
                         for (const snapDirection of this.world.activeLevel.snapDirections) {
-                            directionSnapping.direction.copy(snapDirection);
-                            directionSnapping.closestPointToPoint(point, candidate);
+                            directionSnapping.end.addVectors(end, snapDirection);
+                            directionSnapping.closestPointToPoint(point, false, candidate);
                             candidate.setY(point.y);
                             distance = candidate.distanceTo(point);
                             if (distance < maxDistanceThreshold) {
@@ -191,8 +190,9 @@ class WallTool extends Tool {
                             candidates.push({
                                 point: candidate.point,
                                 distance: distance,
-                                type: "wall_snap_ray",
                                 wall: wall,
+                                type: (candidate.point.distanceTo(wall.start) < 0.0001? "wall_start":
+                                    candidate.point.distanceTo(wall.end) < 0.0001? "wall_end": "wall_closest_point"),
                             });
                             break;
                         }
@@ -216,12 +216,12 @@ class WallTool extends Tool {
         }
         if (snap && placingEnd && !isContinuation) {
             // the continuation of the current line
-            const ray = new THREE.Ray(this.startPoint);
+            const ray = new THREE.Line3(this.startPoint);
             const candidate = new THREE.Vector3();
             let continuation, continuationDirection, continuationDistance = Number.MAX_VALUE;
             for (const snapDirection of this.world.activeLevel.snapDirections) {
-                ray.direction.copy(snapDirection);
-                ray.closestPointToPoint(point, candidate);
+                ray.end.addVectors(ray.start, snapDirection);
+                ray.closestPointToPoint(point, false, candidate);
                 candidate.setY(point.y);
                 const candidateDistance = candidate.distanceTo(point);
                 if (candidateDistance < continuationDistance) {
@@ -230,14 +230,22 @@ class WallTool extends Tool {
                     continuationDistance = candidateDistance;
                 }
             }
+            const continuationStartOfs = candidates.length;
             candidates.push({
                 point: continuation,
                 distance: continuationDistance,  // continuations allowed at any distance
                 type: "continuation",
                 direction: continuationDirection,
             });
-            // and add in guidelines etc for the continuation point too
-            for (const snapNearContinuation of this.findSnapPoints(continuation, 0.01, snap, false, true)) {
+            // and add in guidelines etc. for the continuation point too
+            for (const snapNearContinuation of this.findSnapPoints(continuation, 0.01, true)) {
+                if (["wall_start", "wall_end", "wall_closest_point"].indexOf(snapNearContinuation.type) !== -1) {
+                    // so we ran into a wall?  convert from continuation to explicit hit
+                    console.log("converting continuation into", snapNearContinuation);
+                    candidates.splice(continuationStartOfs);
+                    candidates.push(snapNearContinuation);
+                    break;
+                }
                 snapNearContinuation.point = continuation;
                 snapNearContinuation.distance = continuationDistance;
                 snapNearContinuation.isContinuation = true;
@@ -254,12 +262,12 @@ class WallTool extends Tool {
         let y = event.clientY - this.worldView.pane.offsetTop;
         let mousePos = null, snaps = null;
         const intersection = mouseRay.ray.intersectPlane(this.world.activeLevel.floorPlane, new THREE.Vector3());
-        this.ok = !!intersection;
+        this.ok = intersection && intersection.length() < 100;  // not too far from origin
         if(intersection) {
             intersection.setY(this.world.activeLevel.floorPlane.constant);
             this.world.activeLevel.roundToPrecision(intersection);
             this.snap = !event.shiftKey;
-            const candidates = this.findSnapPoints(intersection, maxDistanceThreshold, this.snap, this.placingEnd);
+            const candidates = this.findSnapPoints(intersection, maxDistanceThreshold);
             // do we have any candidates?
             if (candidates.length) {
                 // reduce to those snaps for the closest point
@@ -290,7 +298,7 @@ class WallTool extends Tool {
         this.cursor.style.visibility = "visible";
     }
 
-    onMouseDown(event) {
+    onMouseDown() {
         console.assert(!this.placingEnd);
         if (this.mousePos) {
             this.placingEnd = true;
@@ -310,7 +318,7 @@ class WallTool extends Tool {
             for (const endSnap of (this.endSnaps || [])) {
                 endSnapTypes += "|" + endSnap.type;
             }
-            console.log(startSnapTypes.substring(1) || null, "-->", endSnapTypes.substring(1) || null);
+            console.log("" + (startSnapTypes.substring(1) || null) + " --> " + (endSnapTypes.substring(1) || null));
         }
         this.reset();
     }
@@ -392,7 +400,7 @@ class GuideLine {
         if (this.showMeasurement) {
             this.measurementLabel.removeFromParent();
         }
-        if (this.dot) {
+        if (this.showStartDot) {
             this.dot.removeFromParent();
         }
     }

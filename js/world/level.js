@@ -25,6 +25,8 @@ class Level {
                 if (existing === wall.angle) {
                     dupeSnap = true;
                     break;
+                } else if (Math.abs(existing - wall.angle) === 1) {
+                    console.warn("angle " + wall.angle + " is very close to " + existing, wall);
                 }
             }
             if (!dupeSnap) {
@@ -32,10 +34,10 @@ class Level {
             }
         }
         // change snap angles into directions
-        this.snapDirections = snapAngles.map(angleYToDirection);
+        this.snapDirections = snapAngles.map((angle) => new AngleYDirection(angle));
         // compute all the wall align intersections
         const wallAlignIntersections = {};
-        const alignDirections = snapAngles.filter((angle) => angle < 180).map(angleYToDirection);
+        const alignDirections = this.snapDirections.filter((angle) => angle.angle < 180);
         const wallEnd = new THREE.Vector3(), otherEnd = new THREE.Vector3();
         for (const wall of walls) {
             for (const other of walls) {
@@ -134,9 +136,14 @@ class Level {
     }
 }
 
-function angleYToDirection(angle) {
-    const rotated = new THREE.Vector2(100).rotateAround(origin, THREE.MathUtils.degToRad(angle));
-    return new THREE.Vector3(rotated.x, 0, rotated.y).normalize();
+// DIRECTIONS ARE NOT NORMALIZED!
+class AngleYDirection extends THREE.Vector3 {
+    constructor(angle) {
+        console.assert(angle === Math.round(angle), angle);
+        const rotated = new THREE.Vector2(10000).rotateAround(origin, THREE.MathUtils.degToRad(angle));
+        super(rotated.x, 0, rotated.y);
+        this.angle = angle;
+    }
 }
 
 function lineToAngleY(start, end) {
@@ -175,4 +182,4 @@ function intersectY(startA, endA, startB, endB, infiniteLines = true) {
     };
 }
 
-export {Level, intersectY, lineToAngleY};
+export {Level, intersectY, lineToAngleY, AngleYDirection};
