@@ -38,62 +38,6 @@ class Level {
         }
         // change snap angles into directions
         this.snapDirections = snapAngles.map((angle) => new AngleYDirection(angle));
-        // compute all the wall align intersections
-        const wallAlignIntersections = {};
-        const alignDirections = this.snapDirections.filter((angle) => angle.angle < 180);
-        const wallEnd = new THREE.Vector3(), otherEnd = new THREE.Vector3();
-        for (const wall of walls) {
-            for (const other of walls) {
-                if (other === wall) {
-                    break;
-                }
-                const pointOnLine = new THREE.Vector3();
-                for (const wallStart of [wall.start, wall.end]) {
-                    for (const otherStart of [other.start, other.end]) {
-                        for (const wallDirection of alignDirections) {
-                            wallEnd.addVectors(wallStart, wallDirection);
-                            for (const otherDirection of alignDirections) {
-                                if (!otherDirection.equals(wallDirection)) {
-                                    otherEnd.addVectors(otherStart, otherDirection);
-                                    const intersection = intersectY(wallStart, wallEnd, otherStart, otherEnd);
-                                    if (intersection) {
-                                        if (wall.line.closestPointToPoint(intersection.point, true, pointOnLine).distanceToSquared(intersection.point) < 0.1 ||
-                                            other.line.closestPointToPoint(intersection.point, true, pointOnLine).distanceToSquared(intersection.point) < 0.1) {
-                                            // must be outside the actual wall line
-                                            continue;
-                                        }
-                                        const key = intersection.point.x.toFixed(2) + "_" + intersection.point.z.toFixed(2);
-                                        const wallStartDistance = wall.start.distanceTo(intersection.point),
-                                            wallEndDistance = wall.end.distanceTo(intersection.point);
-                                        const otherStartDistance = other.start.distanceTo(intersection.point),
-                                            otherEndDistance = other.end.distanceTo(intersection.point);
-                                        const wallDistance = Math.min(wallStartDistance, wallEndDistance);
-                                        const otherDistance = Math.min(otherStartDistance, otherEndDistance);
-                                        if (wallDistance < 0.05 || otherDistance < 0.05) {
-                                            continue;
-                                        }
-                                        const sumDistance = wallDistance + otherDistance;
-                                        if (!(key in wallAlignIntersections) || wallAlignIntersections[key].sumDistance >= sumDistance) {
-                                            wallAlignIntersections[key] = {
-                                                point: intersection.point,
-                                                sumDistance: sumDistance,
-                                                wallA: wall,
-                                                wallAEnd: wallStartDistance < wallEndDistance ? "start" : "end",
-                                                wallADirection: wallDirection,
-                                                wallB: other,
-                                                wallBEnd: otherStartDistance < otherEndDistance ? "start" : "end",
-                                                wallBDirection: otherDirection,
-                                            };
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        this.snapWallAlignIntersections = Object.values(wallAlignIntersections);
     }
 
     roundToPrecision(val) {

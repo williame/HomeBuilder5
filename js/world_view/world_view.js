@@ -36,7 +36,7 @@ class WorldView {
         this.orthographicCameraPlan.position.setY(100);  // plan view looking down
         this.orthographicCameras = [this.orthographicCameraPlan];
         this.cameras = [this.perspectiveCamera, ...this.orthographicCameras];
-        this.camera = this.orthographicCameraPlan;
+        this.camera = this.orthographicCameraPlan;  // default to top-down view
 
         // create renderers
 
