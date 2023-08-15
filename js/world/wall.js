@@ -1,3 +1,6 @@
+/* (c) William Edwards 2023
+  Licensed under the AGPLv3; see LICENSE for details */
+
 import * as THREE from 'three';
 import {deg90} from "./world.js";
 import {Component} from "./Component.js";

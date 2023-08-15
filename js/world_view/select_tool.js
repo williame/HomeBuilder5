@@ -1,3 +1,6 @@
+/* (c) William Edwards 2023
+  Licensed under the AGPLv3; see LICENSE for details */
+
 import {Tool} from "./tool.js";
 
 class SelectTool extends Tool {

@@ -1,3 +1,6 @@
+/* (c) William Edwards 2023
+  Licensed under the AGPLv3; see LICENSE for details */
+
 import * as THREE from 'three';
 import {ComponentCollection} from "./Component.js";
 import {Wall} from "./wall.js";

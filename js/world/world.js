@@ -1,7 +1,11 @@
+/* (c) William Edwards 2023
+  Licensed under the AGPLv3; see LICENSE for details */
+
 import * as THREE from 'three';
 import {ComponentCollection} from "./Component.js";
 import {Level} from "./level.js";
 
+const epsilon = 0.0001;
 const origin = new THREE.Vector3();
 const deg90 = THREE.MathUtils.degToRad(90);
 
@@ -34,4 +38,4 @@ class World {
     }
 }
 
-export {World, origin, deg90}
+export {World, epsilon, origin, deg90}

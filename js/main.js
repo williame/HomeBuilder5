@@ -1,3 +1,6 @@
+/* (c) William Edwards 2023
+  Licensed under the AGPLv3; see LICENSE for details */
+
 import * as THREE from 'three';
 import {World} from "./world/world.js";
 import {WorldView} from "./world_view/world_view.js";

@@ -1,3 +1,6 @@
+/* (c) William Edwards 2023
+  Licensed under the AGPLv3; see LICENSE for details */
+
 class Tool {
     constructor(worldView) {
         this.worldView = worldView;

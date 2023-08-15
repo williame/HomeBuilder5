@@ -1,3 +1,6 @@
+/* (c) William Edwards 2023
+  Licensed under the AGPLv3; see LICENSE for details */
+
 import * as THREE from "three";
 import {OrbitControls} from 'three/examples/jsm/controls/OrbitControls';
 import {CSS2DRenderer} from 'three/examples/jsm/renderers/CSS2DRenderer.js';
@@ -29,14 +32,25 @@ class WorldView {
 
         this.perspectiveCamera = new THREE.PerspectiveCamera(75, 1, 0.1, 100);
         this.perspectiveCamera.position.set(7, 10, 8);
-        this.camera = this.perspectiveCamera;  // active camera; we haven't added any ortho yet
+        this.orthographicCameraPlan = new THREE.OrthographicCamera();
+        this.orthographicCameraPlan.position.setY(100);  // plan view looking down
+        this.orthographicCameras = [this.orthographicCameraPlan];
+        this.cameras = [this.perspectiveCamera, ...this.orthographicCameras];
+        this.camera = this.orthographicCameraPlan;
+
+        // create renderers
 
         this.renderer = new THREE.WebGLRenderer({antialias: true});
         this.renderer.setClearColor("dimgray");
         this.pane.appendChild(this.renderer.domElement);
 
-        // create tool palette
+        this.labelRenderer = new CSS2DRenderer();
+        this.labelRenderer.domElement.className = "label_renderer";
+        this.pane.appendChild(this.labelRenderer.domElement);
 
+        document.body.appendChild(this.pane);
+
+        // create tool palette
         const tool_palette = document.createElement("div");
         this.pane.appendChild(tool_palette);
         tool_palette.className = "tool_palette";
@@ -60,12 +74,21 @@ class WorldView {
         selectButton.addEventListener("click", () => changeTool(selectButton, selectTool));
         tool_palette.appendChild(selectButton);
 
-        const orbitControls = new OrbitControls(this.perspectiveCamera, this.renderer.domElement);
-        orbitControls.addEventListener('change', this.render.bind(this));
-        orbitControls.enabled = false;
+        const orbitControls = {};
+        for (const camera of this.cameras) {
+            const orbitControl = new OrbitControls(camera, this.renderer.domElement);
+            orbitControl.addEventListener('change', this.render);
+            if (camera === this.orthographicCameraPlan) {
+                orbitControl.minPolarAngle = Math.PI;
+                orbitControl.maxPolarAngle = Math.PI;
+            }
+            orbitControl.enabled = false;
+            orbitControl.update();
+            orbitControls[this.camera.uuid] = orbitControl;
+        }
         const orbitTool = {
-            enable: () => orbitControls.enabled = true,
-            disable: () => orbitControls.enabled = false,
+            enable: () => orbitControls[this.camera.uuid].enabled = true,
+            disable: () => orbitControls[this.camera.uuid].enabled = false,
         };
         const orbitButton = document.createElement("button");
         orbitButton.textContent = "orbit";
@@ -80,11 +103,6 @@ class WorldView {
 
         wallButton.click();  // default tool
 
-        this.labelRenderer = new CSS2DRenderer();
-        this.labelRenderer.domElement.className = "label_renderer";
-        this.pane.appendChild(this.labelRenderer.domElement);
-
-        document.body.appendChild(this.pane);
         window.addEventListener('resize', this.resize.bind(this));
         this.resize();
     }
@@ -94,6 +112,14 @@ class WorldView {
         const height = this.pane.offsetHeight;
         this.perspectiveCamera.aspect = width / (height || 1);
         this.perspectiveCamera.updateProjectionMatrix();
+        const camFactor = 100;
+        for (const orthographicCamera of this.orthographicCameras) {
+            orthographicCamera.left = -width / camFactor;
+            orthographicCamera.right = width / camFactor;
+            orthographicCamera.top = height / camFactor;
+            orthographicCamera.bottom = -height / camFactor;
+            orthographicCamera.updateProjectionMatrix();
+        }
         this.pane.style.width = width + "px";
         this.renderer.setSize(width, height);
         this.labelRenderer.setSize(width, height);
@@ -109,16 +135,16 @@ class WorldView {
 
     render() {
         this.animationFrameRequested = false;
-        this.light.position.copy(this.perspectiveCamera.position);
-        this.renderer.render(this.scene, this.perspectiveCamera);
-        this.labelRenderer.render(this.scene, this.perspectiveCamera);
+        this.light.position.copy(this.camera.position);
+        this.renderer.render(this.scene, this.camera);
+        this.labelRenderer.render(this.scene, this.camera);
     }
 
     getMouseRay(mouseEvent) {
         const targetRect = mouseEvent.target.getBoundingClientRect();
         mousePos.setX(((mouseEvent.clientX - targetRect.left) / targetRect.width) * 2 - 1);
         mousePos.setY(-((mouseEvent.clientY - targetRect.top) / targetRect.height) * 2 + 1);
-        mouseRay.setFromCamera(mousePos, this.perspectiveCamera);
+        mouseRay.setFromCamera(mousePos, this.camera);
         return mouseRay;
     }
 }
