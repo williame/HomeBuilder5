@@ -12,9 +12,6 @@ class Tool {
                 const eventName = methodName.substring(2).toLowerCase();
                 this.eventListeners[eventName] = this[methodName].bind(this);
             }
-            if (methodName.startsWith("#")) {
-                console.log("see private method", methodName);
-            }
         }
     }
 

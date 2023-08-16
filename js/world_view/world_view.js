@@ -31,12 +31,13 @@ class WorldView {
         this.scene.add(this.light);
 
         this.perspectiveCamera = new THREE.PerspectiveCamera(75, 1, 0.1, 100);
+        this.perspectiveCamera.userData.name = "3D";
         this.perspectiveCamera.position.set(7, 10, 8);
         this.orthographicCameraPlan = new THREE.OrthographicCamera();
+        this.orthographicCameraPlan.userData.name = "2D";
         this.orthographicCameraPlan.position.setY(100);  // plan view looking down
         this.orthographicCameras = [this.orthographicCameraPlan];
         this.cameras = [this.perspectiveCamera, ...this.orthographicCameras];
-        this.camera = this.orthographicCameraPlan;  // default to top-down view
 
         // create renderers
 
@@ -68,6 +69,24 @@ class WorldView {
             tool.enable();
         }
 
+        const orbitButton = document.createElement("button");
+        orbitButton.textContent = "orbit";
+
+        let cameraOffset = 0;
+        const cameraButton = document.createElement("button");
+        cameraButton.addEventListener("click", () => {
+            this.camera = this.cameras[cameraOffset];
+            cameraOffset = (cameraOffset + 1) % this.cameras.length;
+            cameraButton.textContent = this.cameras[cameraOffset].userData.name;
+            if (orbitButton === currentButton) {
+                orbitButton.click();
+            }
+            this.needsUpdate();
+        })
+        cameraButton.textContent = this.cameras[cameraOffset].userData.name;
+        cameraButton.click();
+        tool_palette.appendChild(cameraButton);
+
         const selectTool = new SelectTool(this);
         const selectButton = document.createElement("button");
         selectButton.textContent = "select";
@@ -84,14 +103,12 @@ class WorldView {
             }
             orbitControl.enabled = false;
             orbitControl.update();
-            orbitControls[this.camera.uuid] = orbitControl;
+            orbitControls[camera.uuid] = orbitControl;
         }
         const orbitTool = {
             enable: () => orbitControls[this.camera.uuid].enabled = true,
             disable: () => orbitControls[this.camera.uuid].enabled = false,
         };
-        const orbitButton = document.createElement("button");
-        orbitButton.textContent = "orbit";
         orbitButton.addEventListener("click", () => changeTool(orbitButton, orbitTool));
         tool_palette.appendChild(orbitButton);
 

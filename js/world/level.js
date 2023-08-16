@@ -52,8 +52,18 @@ class Level {
     }
 
     updateWalls() {
-        console.log("TODO update walls");
         this.updateSnaps();
+        // if we are passed a list of 'dirty' wall end-points, rebuild all walls that share those ends
+        if (arguments.length) {
+            for (const wall of this.walls.values) {
+                for (const end of arguments) {
+                    if (end && (wall.start.equals(end) || wall.end.equals(end))) {
+                        wall.rebuild();
+                        break;
+                    }
+                }
+            }
+        }
     }
 
     addComponent(component) {
@@ -73,14 +83,6 @@ class Level {
             this.walls.removeComponent(component);
         }
     }
-
-    intersectY(lineA, lineB, infiniteLines=true) {
-        const intersection = intersectY(lineA.start, lineA.end, lineB.start, lineB.end, infiniteLines);
-        if (intersection) {
-            intersection.point.setY(this.y);
-        }
-        return intersection;
-    }
 }
 
 // DIRECTIONS ARE NOT NORMALIZED!
@@ -98,12 +100,13 @@ function lineToAngleY(start, end) {
 }
 
 // Line intercept math by Paul Bourke http://paulbourke.net/geometry/pointlineplane/
-// Determine the intersection point of two 3D lines on the Y plane
+// Determine the intersection point of two 2D/3D lines on the 3D Y plane
 // Return null if no intersection and false if the lines are parallel
 function intersectY(startA, endA, startB, endB, infiniteLines = true) {
+    const is2D = startA instanceof THREE.Vector2;
     // map three.js z to 2D x y
-    const x1 = startA.x, y1 = startA.z, x2 = endA.x, y2 = endA.z;
-    const x3 = startB.x, y3 = startB.z, x4 = endB.x, y4 = endB.z;
+    const x1 = startA.x, y1 = is2D? startA.y: startA.z, x2 = endA.x, y2 = is2D? endA.y: endA.z;
+    const x3 = startB.x, y3 = is2D? startB.y: startB.z, x4 = endB.x, y4 = is2D? endB.y: endB.z;
     // Check if none of the lines are of length 0
     if ((x1 === x2 && y1 === y2) || (x3 === x4 && y3 === y4)) {
         return null;
@@ -112,20 +115,22 @@ function intersectY(startA, endA, startB, endB, infiniteLines = true) {
     if (denominator === 0) { // Lines are parallel
         return false;
     }
-    const ua = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denominator;
-    const ub = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denominator;
+    const uA = ((x4 - x3) * (y1 - y3) - (y4 - y3) * (x1 - x3)) / denominator;
+    const uB = ((x2 - x1) * (y1 - y3) - (y2 - y1) * (x1 - x3)) / denominator;
 
     // is the intersection along the segments
-    if (!infiniteLines && (ua < 0 || ua > 1 || ub < 0 || ub > 1)) {
+    if (!infiniteLines && (uA < 0 || uA > 1 || uB < 0 || uB > 1)) {
         return null;
     }
     // return intersection
+    const x = x1 + uA * (x2 - x1), y = y1 + uA * (y2 - y1);
     return {
-        point: new THREE.Vector3(x1 + ua * (x2 - x1),
-            startA.y + ua * (endA.y - startA.y),
-            y1 + ua * (y2 - y1)),  // back to 3D
-        inA: ua >= 0 && ua <= 1,
-        inB: ub >= 0 && ub <= 1,
+        point: is2D? new THREE.Vector2(x, y):
+            new THREE.Vector3(x, startA.y + uA * (endA.y - startA.y), y),  // back to 3D
+        uA: uA,
+        uB: uB,
+        inA: uA >= 0 && uA <= 1,
+        inB: uB >= 0 && uB <= 1,
     };
 }
 

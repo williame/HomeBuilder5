@@ -19,6 +19,7 @@ class SelectTool extends Tool {
     disable() {
         this.disableHighlight();
         super.disable();
+        this.world.viewsNeedUpdate();
     }
 
     onKeyDown(event) {
@@ -41,9 +42,10 @@ class SelectTool extends Tool {
         const newTarget = intersections.length? intersections[0].object.userData.homeBuilderId: null;
         if (newTarget !== this.highlighted) {
             this.disableHighlight();
+            this.highlighted = newTarget;
             if (newTarget) {
-                this.highlighted = newTarget;
                 this.world.getComponent(this.highlighted).rebuild(true);
+                this.world.viewsNeedUpdate();
             }
         }
     }
