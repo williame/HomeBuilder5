@@ -15,6 +15,8 @@ class Level {
         this.floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), y);
         this.components = new ComponentCollection();
         this.walls = new ComponentCollection();
+        this.needingRebuild = {};
+        this.rebuildRequested = false;
         this.updateSnaps();
     }
 
@@ -58,12 +60,33 @@ class Level {
             for (const wall of this.walls.values) {
                 for (const end of arguments) {
                     if (end && (wall.start.equals(end) || wall.end.equals(end))) {
-                        wall.rebuild();
+                        this.needsRebuild(wall);
                         break;
                     }
                 }
             }
         }
+    }
+
+    needsRebuild(component) {
+        if (!(component.homeBuilderId in this.needingRebuild)) {
+            if (!this.rebuildRequested) {
+                window.requestAnimationFrame(this.rebuild.bind(this));
+                this.rebuildRequested = true;
+            }
+            this.needingRebuild[component.homeBuilderId] = component;
+        }
+    }
+
+    rebuild() {
+        this.rebuildRequested = false;
+        for (const dirty of Object.values(this.needingRebuild)) {
+            if (!dirty.destroyed) {
+                dirty.rebuild();
+            }
+        }
+        this.needingRebuild = {};
+        this.world.viewsNeedUpdate();
     }
 
     addComponent(component) {
@@ -96,7 +119,7 @@ class AngleYDirection extends THREE.Vector3 {
 }
 
 function lineToAngleY(start, end) {
-    return Math.abs(Math.round(THREE.MathUtils.radToDeg(new THREE.Vector2(start.x - end.x, start.z - end.z).angle())));
+    return (Math.round(THREE.MathUtils.radToDeg(new THREE.Vector2(start.x - end.x, start.z - end.z).angle())) + 360) % 360;
 }
 
 // Line intercept math by Paul Bourke http://paulbourke.net/geometry/pointlineplane/

@@ -1,6 +1,7 @@
 /* (c) William Edwards 2023
   Licensed under the AGPLv3; see LICENSE for details */
 
+import * as THREE from 'three';
 import {Tool} from "./tool.js";
 
 class SelectTool extends Tool {
@@ -11,7 +12,7 @@ class SelectTool extends Tool {
 
     disableHighlight() {
         if (this.highlighted) {
-            this.worldView.world.getComponent(this.highlighted).rebuild(false);
+            this.worldView.world.getComponent(this.highlighted).setHighlighted(false);
             this.highlighted = null;
         }
     }
@@ -19,7 +20,6 @@ class SelectTool extends Tool {
     disable() {
         this.disableHighlight();
         super.disable();
-        this.world.viewsNeedUpdate();
     }
 
     onKeyDown(event) {
@@ -39,13 +39,20 @@ class SelectTool extends Tool {
     onMouseDown(event) {
         const mouseRay = this.worldView.getMouseRay(event);
         const intersections = mouseRay.intersectObjects(this.world.scene.children);
-        const newTarget = intersections.length? intersections[0].object.userData.homeBuilderId: null;
-        if (newTarget !== this.highlighted) {
-            this.disableHighlight();
-            this.highlighted = newTarget;
-            if (newTarget) {
-                this.world.getComponent(this.highlighted).rebuild(true);
-                this.world.viewsNeedUpdate();
+        for (const intersection of intersections) {
+            if (intersection.object instanceof THREE.LineSegments) {
+                continue;  // ignore intersections with line segments, as they use bounding sphere or something
+            }
+            const target = intersection.object.userData.homeBuilderId;
+            if (target) {
+                if (target !== this.highlighted) {
+                    this.disableHighlight();
+                    this.highlighted = target;
+                    if (target) {
+                        this.world.getComponent(this.highlighted).setHighlighted(true);
+                    }
+                }
+                break;
             }
         }
     }

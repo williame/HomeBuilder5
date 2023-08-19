@@ -27,7 +27,9 @@ class WorldView {
         this.scene.add(new THREE.AxesHelper(5));
         this.scene.add(new THREE.GridHelper(20, 20));
 
+        this.scene.add(new THREE.AmbientLight( 'white', 0.2 ));
         this.light = new THREE.DirectionalLight('white', 8);
+        this.light.position.set(1, 1, 100);
         this.scene.add(this.light);
 
         this.perspectiveCamera = new THREE.PerspectiveCamera(75, 1, 0.1, 100);
@@ -37,7 +39,7 @@ class WorldView {
         this.orthographicCameraPlan.userData.name = "2D";
         this.orthographicCameraPlan.position.setY(100);  // plan view looking down
         this.orthographicCameras = [this.orthographicCameraPlan];
-        this.cameras = [this.perspectiveCamera, ...this.orthographicCameras];
+        this.cameras = [...this.orthographicCameras, this.perspectiveCamera];
 
         // create renderers
 
@@ -98,8 +100,8 @@ class WorldView {
             const orbitControl = new OrbitControls(camera, this.renderer.domElement);
             orbitControl.addEventListener('change', this.render);
             if (camera === this.orthographicCameraPlan) {
-                orbitControl.minPolarAngle = Math.PI;
-                orbitControl.maxPolarAngle = Math.PI;
+                orbitControl.minPolarAngle = -Math.PI;
+                orbitControl.maxPolarAngle = -Math.PI;
             }
             orbitControl.enabled = false;
             orbitControl.update();
@@ -135,6 +137,8 @@ class WorldView {
             orthographicCamera.right = width / camFactor;
             orthographicCamera.top = height / camFactor;
             orthographicCamera.bottom = -height / camFactor;
+            orthographicCamera.near = 0.1;
+            orthographicCamera.far = 1000;
             orthographicCamera.updateProjectionMatrix();
         }
         this.pane.style.width = width + "px";

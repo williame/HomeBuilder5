@@ -12,6 +12,21 @@ class Component {
         this.level = world.activeLevel;
         this.level.addComponent(this);
         this.objects = {};
+        this.isHighlighted = false;
+    }
+
+    destroy() {
+        this.destroyed = true;
+        this.world.removeComponent(this);
+        this.level.removeComponent(this);
+        this.removeAllObjects();
+    }
+
+    setHighlighted(isHighlighted) {
+        if (isHighlighted !== this.isHighlighted) {
+            this.isHighlighted = isHighlighted;
+            this.level.needsRebuild(this);
+        }
     }
 
     addObject(obj) {
@@ -35,12 +50,6 @@ class Component {
             obj.removeFromParent();
         }
         this.objects = {};
-    }
-
-    destroy() {
-        this.world.removeComponent(this);
-        this.level.removeComponent(this);
-        this.removeAllObjects();
     }
 }
 

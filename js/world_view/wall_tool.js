@@ -2,11 +2,11 @@
   Licensed under the AGPLv3; see LICENSE for details */
 
 import * as THREE from 'three';
-import {CSS2DObject} from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import {Wall} from '../world/wall.js';
 import {Tool} from "./tool.js";
 import {AngleYDirection, intersectY} from "../world/level.js";
 import {epsilon} from "../world/world.js";
+import {createDot, GuideLine} from "./guide_line.js";
 
 class WallTool extends Tool {
 
@@ -99,13 +99,6 @@ class WallTool extends Tool {
                 const guideName = snap.type + "_" + snap.wall.homeBuilderId;
                 const wallEnd = snap.type === "wall_align_start"? snap.wall.start: snap.wall.end;
                 addGuide(guideName, wallEnd, mousePos, 0xc0c0ff, snap.direction);
-            } else if (snap && snap.type === "wall_align_intersection") {
-                let guideName = snap.type + "_" + snap.walls.wallA + "_" + snap.walls.wallAEnd;
-                let wallEnd = snap.walls.wallAEnd === "start"? snap.walls.wallA.start: snap.walls.wallA.end;
-                addGuide(guideName, wallEnd, mousePos, 0xc0c0ff, snap.walls.wallADirection);
-                guideName = snap.type + "_" + snap.walls.wallB + "_" + snap.walls.wallBEnd;
-                wallEnd = snap.walls.wallBEnd === "start"? snap.walls.wallB.start: snap.walls.wallB.end;
-                addGuide(guideName, wallEnd, mousePos, 0xc0c0ff, snap.walls.wallBDirection);
             }
         }
         for (const hideName of hide) {
@@ -292,16 +285,31 @@ class WallTool extends Tool {
     onMouseUp() {
         if (this.mousePos && this.placingEnd && this.ok) {
             new Wall(this.world, this.startPoint, this.endPoint);  // will add itself to world
-            // printf debugging
-            let startSnapTypes = "";
-            for (const startSnap of (this.startSnaps || [])) {
-                startSnapTypes += "|" + startSnap.type;
+            let startSnapTypes = "";  // printf debugging
+            const startWallSplits = {};
+            for (const snap of (this.startSnaps || [])) {
+                if (snap.type.startsWith("wall_align_") &&
+                    Math.abs(snap.wall.line.closestPointToPoint(this.startPoint, true, new THREE.Vector3()).distanceTo(this.startPoint)) <= epsilon) {
+                    startWallSplits[snap.wall.homeBuilderId] = snap.wall;
+                }
+                startSnapTypes += "|" + snap.type;
             }
             let endSnapTypes = "";
-            for (const endSnap of (this.endSnaps || [])) {
-                endSnapTypes += "|" + endSnap.type;
+            const endWallSplits = {};
+            for (const snap of (this.endSnaps || [])) {
+                if (snap.type.startsWith("wall_align_") &&
+                    Math.abs(snap.wall.line.closestPointToPoint(this.endPoint, true, new THREE.Vector3()).distanceTo(this.endPoint)) <= epsilon) {
+                    endWallSplits[snap.wall.homeBuilderId] = snap.wall;
+                }
+                endSnapTypes += "|" + snap.type;
             }
-            console.log("" + (startSnapTypes.substring(1) || null) + " --> " + (endSnapTypes.substring(1) || null));
+            console.log("" + (startSnapTypes.substring(1) || null) + " --> " + (endSnapTypes.substring(1) || null), startWallSplits);
+            for (const wall of Object.values(startWallSplits)) {
+                wall.split(this.startPoint);
+            }
+            for (const wall of Object.values(endWallSplits)) {
+                wall.split(this.endPoint);
+            }
         }
         this.reset();
     }
@@ -316,97 +324,6 @@ class WallTool extends Tool {
             this.reset();
         }
     }
-}
-
-class GuideLine {
-    constructor(scene, name, start, end, color, prefix="", showMeasurement=true, showStartDot=true) {
-        this.name = name;
-        this.line = new THREE.Line(
-            new THREE.BufferGeometry(),
-            new THREE.LineBasicMaterial({color: color}));
-        if (showMeasurement || showStartDot) {
-            this.line.layers.enableAll();
-        }
-        this.prefix = prefix || name;
-        if (showMeasurement || this.prefix.length) {
-            const label = document.createElement("div");
-            label.className = "guide_line_label";
-            this.measurementLabel = new CSS2DObject(label);
-            this.measurementLabel.center.set(0, 0);
-            this.line.add(this.measurementLabel);
-        }
-        this.showMeasurement = showMeasurement;
-        if (showStartDot) {
-            const dot = createDot();
-            setDotColor(dot, color);
-            this.dot = new CSS2DObject(dot);
-            this.line.add(this.dot);
-        }
-        this.showStartDot = showStartDot;
-        this.update(start, end);
-        scene.add(this.line);
-    }
-
-    update(start, end, color=null) {
-        this.start = start;
-        this.end = end;
-        this.line.geometry.setFromPoints([
-            // we raise it up very slightly so that it doesn't z-fight the grid
-            start.clone().setY(start.y - 0.01),
-            end.clone().setY(end.y - 0.01)]);
-        let label = this.prefix;
-        if (this.showMeasurement) {
-            const length = start.distanceTo(end);
-            if (length > 0) {
-                if (label.length) {
-                    label += " ";
-                }
-                label += Number(length.toFixed(2));
-            }
-        }
-        if (label.length) {
-            this.measurementLabel.position.copy(start.clone().lerp(end, 0.5));
-            this.measurementLabel.element.textContent = label;
-            this.measurementLabel.element.style.visibility = "visible";
-        } else if (this.measurementLabel) {
-            this.measurementLabel.element.style.visibility = "hidden";
-        }
-        if (this.showStartDot) {
-            if (color instanceof Number) {
-                setDotColor(this.dot, color);
-            }
-            this.dot.position.copy(start);
-        }
-        if (color) {
-            this.line.material.color.setHex(color);
-        }
-        this.line.visible = true;
-    }
-
-    removeFromParent() {
-        this.line.removeFromParent();
-        if (this.showMeasurement) {
-            this.measurementLabel.removeFromParent();
-        }
-        if (this.showStartDot) {
-            this.dot.removeFromParent();
-        }
-    }
-}
-
-function createDot(visible=true) {
-    const dot = document.createElement("div");
-    dot.className = "mouse_circle1";
-    if (!visible) {
-        dot.style.visibility = "hidden";
-    }
-    return dot;
-}
-
-function setDotColor(dot, color) {
-    const hexColor = "#" + color.toString(16);
-    dot.style.borderColor = hexColor;
-    dot.style.backgroundColor = hexColor + "30";  // nearly transparent
 }
 
 export {WallTool};
