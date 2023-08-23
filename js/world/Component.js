@@ -2,8 +2,9 @@
   Licensed under the AGPLv3; see LICENSE for details */
 
 import * as THREE from 'three';
+import * as asserts from '../asserts.js';
 
-class Component {
+export class Component {
 
     constructor(world) {
         this.world = world;
@@ -30,7 +31,7 @@ class Component {
     }
 
     addObject(obj) {
-        console.assert(obj instanceof THREE.Object3D, "expected Object3D", obj);
+        asserts.assertInstanceOf(obj, THREE.Object3D)
         obj.userData.homeBuilderId = this.homeBuilderId;
         this.objects[obj.id] = obj;
         this.world.scene.add(obj);
@@ -40,7 +41,7 @@ class Component {
         if (!obj) {
             return;
         }
-        console.assert(obj instanceof THREE.Object3D, "expected Object3D", obj);
+        asserts.assertInstanceOf(obj, THREE.Object3D)
         delete this.objects[obj.id];
         obj.removeFromParent();
     }
@@ -53,7 +54,7 @@ class Component {
     }
 }
 
-class ComponentCollection {
+export class ComponentCollection {
     constructor() {
         this.components = {};
         this.#updateIterators();
@@ -64,14 +65,14 @@ class ComponentCollection {
     }
 
     addComponent(component) {
-        console.assert(component instanceof Component, "not Component", component);
-        console.assert(!this.components.hasOwnProperty(component.homeBuilderId), "Component add twice", component);
+        asserts.assertInstanceOf(component, Component);
+        asserts.assertFalse(this.components.hasOwnProperty(component.homeBuilderId), "Component add twice", component);
         this.components[component.homeBuilderId] = component;
         this.#updateIterators();
     }
 
     removeComponent(component) {
-        console.assert(component instanceof Component, "not Component", component);
+        asserts.assertInstanceOf(component, Component);
         delete this.components[component.homeBuilderId];
         this.#updateIterators();
     }
@@ -82,5 +83,3 @@ class ComponentCollection {
         this.entries = Object.entries(this.components);
     }
 }
-
-export {Component, ComponentCollection};

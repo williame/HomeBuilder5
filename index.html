@@ -14,6 +14,17 @@
     }
   }
   </script>
+  <script type="text/javascript">
+    addEventListener("error", (event) => {
+      console.error(event);
+      const errorDialog = document.getElementById("error_dialog");
+      if (errorDialog) {
+        errorDialog.innerHTML = "<pre>An error occurred!  Please tell Will\n" +
+                event.message + "\n" +
+                event.filename + "#" + event.lineno + ":" + event.colno;
+      }
+    });
+  </script>
   <style>
     html, body {
       font-family: sans-serif;
@@ -59,9 +70,16 @@
       border-radius: 33%;
       padding: 3px;
     }
+    #error_dialog pre {
+      border: 0;
+      padding-left: 10px;
+      background-color: red;
+      color: yellow;
+    }
   </style>
 </head>
 <body>
+  <div id="error_dialog"></div>
   <script type="module" src="js/main.js"></script>
 </body>
 </html>

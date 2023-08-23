@@ -1,28 +1,28 @@
 import * as THREE from "three";
 import {AngleYDirection, lineToAngleY} from "./level.js";
+import * as asserts from "../asserts.js";
 
-export class Capsule2 {
-    constructor(start, end, radius, angle) {
-        console.assert(start instanceof THREE.Vector3, start);
-        console.assert(end instanceof THREE.Vector3, end);
-        console.assert(typeof radius === "number", radius);
-        console.assert(typeof angle === "number", angle);
+export class ParallelLines {
+    constructor(start, end, width, angle=undefined) {
+        asserts.assertNumber(width);
+        this.width = width;
+        this.set(start, end, angle);
+    }
+
+    set(start, end, angle=undefined) {
+        asserts.assertInstanceOf(start, THREE.Vector3);
+        asserts.assertInstanceOf(end, THREE.Vector3);
+        asserts.assertNumber(angle);
         this.start = start;
         this.end = end;
-        this.radius = radius;
         if (typeof angle === "undefined") {
             this.angle = lineToAngleY(start, end);
         } else {
-            console.assert(Math.abs(angle - lineToAngleY(start, end)) <= 1,
+            asserts.assertTrue(Math.abs(angle - lineToAngleY(start, end)) <= 1,
                 "angle too far", lineToAngleY(start, end), this);
             this.angle = angle;
         }
-        this.endOffset = new THREE.Vector3().subVectors(end, start);
-        this.normal = this.endOffset.clone().normalize();
-        this.endOffset.setLength(radius);
-        this.base = new THREE.Vector3().subVectors(start, this.endOffset);
-        this.tip = new THREE.Vector3().addVectors(end, this.endOffset);
-        const widthOffset = new AngleYDirection((this.angle + 90) % 360).setLength(this.radius);
+        const widthOffset = new AngleYDirection((this.angle + 90) % 360).setLength(this.width / 2);
         this.line = new THREE.Line3(start, end);
         this.leftLine = this.line.clone();
         this.leftLine.start.sub(widthOffset);
@@ -30,6 +30,13 @@ export class Capsule2 {
         this.rightLine = this.line.clone();
         this.rightLine.start.add(widthOffset);
         this.rightLine.end.add(widthOffset);
+    }
+}
+
+export class Capsule2 extends ParallelLines {
+    constructor(start, end, radius, angle=undefined) {
+        super(start, end, radius * 2, angle);
+        this.radius = radius;
     }
 
     toShape() {
@@ -45,12 +52,10 @@ export class Capsule2 {
     }
 
     intersects(other) {
-        console.assert(other instanceof Capsule2, other);
-
+        asserts.assertInstanceOf(other, Capsule2);
         function subVectors(a, b) {
             return new THREE.Vector3().subVectors(a, b);
         }
-
         const v0 = subVectors(other.start, this.start);
         const v1 = subVectors(other.end, this.start);
         const v2 = subVectors(other.start, this.end);
@@ -73,25 +78,25 @@ export class Polygon {
 
     lineTo(x, y) {
         if (x instanceof THREE.Vector3) {
-            console.assert(typeof y === "undefined", y);
+            asserts.assertUndefined(y);
             this.vertices.push(new THREE.Vector2(x.x, x.z));
         } else {
-            console.assert(typeof x === "number", x);
-            console.assert(typeof y === "number", y);
+            asserts.assertNumber(x);
+            asserts.assertNumber(y);
             this.vertices.push(new THREE.Vector2(x, y));
         }
         // TODO check we are still convex
     }
 
     closePath() {
-        console.assert(!this.closed);
-        console.assert(this.vertices.length > 1, this);
+        asserts.assertFalse(this.closed, this);
+        asserts.assertTrue(this.vertices.length > 1, this);
         this.vertices.push(this.vertices[0]);
         this.closed = true;
     }
 
     toShape() {
-        console.assert(this.closed);
+        asserts.assertTrue(this.closed, this);
         const shape = new THREE.Shape();
         shape.moveTo(this.vertices[0].x, this.vertices[0].y);
         for (let i = 1, e = this.vertices.length - 1; i < e; i++) {
@@ -102,8 +107,9 @@ export class Polygon {
     }
 
     intersects(other) {
-        console.assert(this.closed && this.convex);
-        console.assert(other instanceof Polygon && other.closed && other.convex, other);
+        asserts.assertTrue(this.closed && this.convex);
+        asserts.assertInstanceOf(other, Polygon);
+        asserts.assertTrue(other.closed && other.convex, other);
         // use separating axis theorem
         const verticesA = this.vertices, verticesB = other.vertices, axis = new THREE.Vector2();
         for (const vertices of [verticesA, verticesB]) {

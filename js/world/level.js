@@ -2,9 +2,11 @@
   Licensed under the AGPLv3; see LICENSE for details */
 
 import * as THREE from 'three';
+import * as asserts from '../asserts.js';
 import {ComponentCollection} from "./Component.js";
 import {Wall} from "./wall.js";
 import {origin} from "./world.js";
+import {assertInstanceOf} from "../asserts.js";
 
 class Level {
 
@@ -42,21 +44,13 @@ class Level {
         this.snapDirections = snapAngles.map((angle) => new AngleYDirection(angle));
     }
 
-    roundToPrecision(val) {
-        if (val instanceof Number) {
-            return Math.round(val * 1000) / 1000;
-        } else if (val instanceof THREE.Vector3) {
-            return val.set(Math.round(val.x * 1000) / 1000,
-                Math.round(val.y * 1000) / 1000,
-                Math.round(val.z * 1000) / 1000);
-        }
-        throw new Error("cannot handle roundToPrecision(" + (typeof val) + ": " + val);
-    }
-
     updateWalls() {
         this.updateSnaps();
         // if we are passed a list of 'dirty' wall end-points, rebuild all walls that share those ends
         if (arguments.length) {
+            for (const end of arguments) {
+                assertInstanceOf(end, THREE.Vector3, true);
+            }
             for (const wall of this.walls.values) {
                 for (const end of arguments) {
                     if (end && (wall.start.equals(end) || wall.end.equals(end))) {
@@ -111,7 +105,7 @@ class Level {
 // DIRECTIONS ARE NOT NORMALIZED!
 class AngleYDirection extends THREE.Vector3 {
     constructor(angle) {
-        console.assert(angle === Math.round((angle + 360) % 360), angle);
+        asserts.assertTrue(angle === Math.round((angle + 360) % 360), "bad angle", angle);
         const rotated = new THREE.Vector2(10000).rotateAround(origin, THREE.MathUtils.degToRad(angle));
         super(rotated.x, 0, rotated.y);
         this.angle = angle;
@@ -120,7 +114,7 @@ class AngleYDirection extends THREE.Vector3 {
 
 function lineToAngleY(start, end) {
     const angle = (Math.round(THREE.MathUtils.radToDeg(new THREE.Vector2(start.x - end.x, start.z - end.z).angle())) + 360) % 360;
-    console.assert(angle >= 0 && angle < 360, start, end, angle);
+    asserts.assertTrue(angle >= 0 && angle < 360, "bad angle", start, end, angle);
     return angle;
 }
 

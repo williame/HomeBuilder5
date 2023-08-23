@@ -2,6 +2,7 @@
   Licensed under the AGPLv3; see LICENSE for details */
 
 import * as THREE from 'three';
+import * as asserts from '../asserts.js';
 import {Wall} from '../world/wall.js';
 import {Tool} from "./tool.js";
 import {AngleYDirection, intersectY} from "../world/level.js";
@@ -51,8 +52,8 @@ export class WallTool extends Tool {
         const guidesByDirection = {};
         const hide = Object.keys(this.guides);
         function addGuide(name, start, end, color, direction) {
-            console.assert(start && end, name, start, end);
-            console.assert(!direction || direction instanceof AngleYDirection, name, direction);
+            asserts.assertTrue(start && end, name, start, end);
+            asserts.assertInstanceOf(direction, AngleYDirection, true, name);
             const directionKey = direction? "angle=" + direction.angle: false;
             const existing = directionKey? guidesByDirection[directionKey]: false;
             if (existing && existing.name !== name) {
@@ -149,7 +150,7 @@ export class WallTool extends Tool {
                     continuation.distance = distance;
                 }
             }
-            console.assert(continuation);
+            asserts.assertTrue(continuation);
             point = continuation.point;
         }
         // first search for a really close-by wall end, gathering wallAlignments as we go
@@ -171,7 +172,7 @@ export class WallTool extends Tool {
                 if (!hasWallSnaps) {  // skip if we've found a wall end nearby already
                     tmpLine.start.copy(end);
                     for (const direction of snapDirections) {
-                        if (wall.isParallel(direction.angle)) {
+                        if (wall.footprint.isParallel(direction.angle)) {
                             continue;
                         }
                         tmpLine.end.addVectors(tmpLine.start, direction);
@@ -326,7 +327,7 @@ export class WallTool extends Tool {
     }
 
     onMouseDown() {
-        console.assert(!this.placingEnd);
+        asserts.assertFalse(this.placingEnd);
         if (this.mousePos) {
             this.placingEnd = true;
             this.updateGuides(this.mousePos);
