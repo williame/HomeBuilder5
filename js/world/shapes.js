@@ -1,3 +1,5 @@
+/* (c) William Edwards 2023 */
+
 import * as THREE from "three";
 import {AngleYDirection, lineToAngleY} from "./level.js";
 import * as asserts from "../asserts.js";

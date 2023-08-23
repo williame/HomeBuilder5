@@ -1,3 +1,4 @@
+/* (c) William Edwards 2023 */
 
 export function fail(message) {
     console.error(...arguments);

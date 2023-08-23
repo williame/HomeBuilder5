@@ -1,5 +1,4 @@
-/* (c) William Edwards 2023
-  Licensed under the AGPLv3; see LICENSE for details */
+/* (c) William Edwards 2023 */
 
 import * as THREE from 'three';
 import {World} from "./world/world.js";
