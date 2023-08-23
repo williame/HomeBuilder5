@@ -8,7 +8,7 @@ import {AngleYDirection, intersectY} from "../world/level.js";
 import {epsilon} from "../world/world.js";
 import {createDot, GuideLine} from "./guide_line.js";
 
-class WallTool extends Tool {
+export class WallTool extends Tool {
 
     constructor(worldView) {
         super(worldView);
@@ -17,6 +17,7 @@ class WallTool extends Tool {
         worldView.pane.appendChild(this.cursor);
         this.mousePos = null;
         this.guides = {};
+        this.debug = false;
     }
 
     reset() {
@@ -44,6 +45,7 @@ class WallTool extends Tool {
     }
 
     updateGuides(mousePos, snaps=undefined) {
+        const debug = this.debug;
         const scene = this.worldView.scene;
         const guides = this.guides;
         const guidesByDirection = {};
@@ -51,23 +53,35 @@ class WallTool extends Tool {
         function addGuide(name, start, end, color, direction) {
             console.assert(start && end, name, start, end);
             console.assert(!direction || direction instanceof AngleYDirection, name, direction);
-            const directionKey = direction? "" + direction.x + "_" + direction.y + "_" + direction.z: false;
+            const directionKey = direction? "angle=" + direction.angle: false;
             const existing = directionKey? guidesByDirection[directionKey]: false;
             if (existing && existing.name !== name) {
-                if (existing.start.distanceTo(existing.end) < start.distanceTo(end)) {
+                if (existing.length < start.distanceTo(end)) {
+                    if (debug) {
+                        console.log("not creating ", directionKey, name, start.distanceTo(end), ">=", existing.name, existing.length);
+                    }
                     return;
                 }
                 if (hide.indexOf(existing.name) === -1) {
+                    if (debug) {
+                        console.log("hiding ", directionKey, existing.name, existing.length, ">", name, start.distanceTo(end));
+                    }
                     hide.push(existing.name);
                 }
             }
             if (name in guides) {
+                if (debug) {
+                    console.log("updating", directionKey || "(no direction)", name);
+                }
                 guides[name].update(start, end, color);
                 const hideIdx = hide.indexOf(name);
                 if (hideIdx !== -1) {
                     hide.splice(hideIdx, 1);
                 }
             } else {
+                if (debug) {
+                    console.log("creating", directionKey || "(no direction)", name);
+                }
                 guides[name] = new GuideLine(scene, name, start, end, color);
             }
             if (directionKey) {
@@ -101,6 +115,9 @@ class WallTool extends Tool {
                 addGuide(guideName, wallEnd, mousePos, 0xc0c0ff, snap.direction);
             }
         }
+        if (debug && hide.length) {
+            console.log("hiding", hide);
+        }
         for (const hideName of hide) {
             guides[hideName].removeFromParent();
             delete guides[hideName];
@@ -115,9 +132,6 @@ class WallTool extends Tool {
         let continuation = null, tmpPoint = new THREE.Vector3();
         function isCandidate(point, distance) {
             return distance < maxDistanceThreshold &&
-                (!candidates.length ||
-                    distance < candidates[candidates.length - 1].distance ||
-                    point.equals(candidates[candidates.length - 1].point)) &&
                 (!continuation ||
                     continuation.closestPointToPoint(point, true, tmpPoint === point? new THREE.Vector3(): tmpPoint).distanceTo(point) <= epsilon);
         }
@@ -140,6 +154,7 @@ class WallTool extends Tool {
         }
         // first search for a really close-by wall end, gathering wallAlignments as we go
         const wallAlignments = [], tmpLine = new THREE.Line3();
+        let hasWallSnaps = false;
         for (const wall of walls) {
             for (const end of [wall.start, wall.end]) {
                 const typeSuffix = end === wall.start? "start": "end";
@@ -151,10 +166,14 @@ class WallTool extends Tool {
                         wall: wall,
                         type: "wall_" + typeSuffix,
                     });
+                    hasWallSnaps = true;
                 }
-                if (!candidates.length) {  // skip if we've found a wall end nearby already
+                if (!hasWallSnaps) {  // skip if we've found a wall end nearby already
                     tmpLine.start.copy(end);
                     for (const direction of snapDirections) {
+                        if (wall.isParallel(direction.angle)) {
+                            continue;
+                        }
                         tmpLine.end.addVectors(tmpLine.start, direction);
                         tmpLine.closestPointToPoint(point, true, tmpPoint);
                         const distance = tmpPoint.distanceTo(point);
@@ -165,15 +184,42 @@ class WallTool extends Tool {
                                 start: end,
                                 end: tmpLine.end.clone(),
                                 wall: wall,
+                                direction: direction,
                                 type: "wall_align_" + typeSuffix,
                             });
                         }
                     }
                 }
             }
+            if (!hasWallSnaps) {
+                let snapPoint = null;
+                if (continuation) {
+                    const intersection = intersectY(wall.start, wall.end, continuation.start, continuation.end, false);
+                    snapPoint = intersection? intersection.point: null;
+                } else {
+                    snapPoint = wall.line.closestPointToPoint(point, true, new THREE.Vector3());
+                }
+                const distance = snapPoint !== null? snapPoint.distanceTo(point): maxDistanceThreshold;
+                if (distance < maxDistanceThreshold) {
+                    candidates.push({
+                        point: snapPoint,
+                        distance: distance,
+                        wall: wall,
+                        direction: new AngleYDirection(wall.angle),
+                        type: "wall_align_start",
+                    }, {
+                        point: snapPoint,
+                        distance: distance,
+                        wall: wall,
+                        direction: new AngleYDirection((wall.angle + 180) % 360),
+                        type: "wall_align_end",
+                    });
+                    hasWallSnaps = true;
+                }
+            }
         }
         // if we aren't near any wal ends, then look for wall alignments
-        if (!candidates.length && wallAlignments.length) {
+        if (!hasWallSnaps && wallAlignments.length) {
             // any intersections?
             for (const alignmentA of wallAlignments) {
                 for (const alignmentB of wallAlignments) {
@@ -189,11 +235,13 @@ class WallTool extends Tool {
                                 distance: distance,
                                 wall: alignmentA.wall,
                                 type: alignmentA.type,
+                                direction: alignmentA.direction,
                             }, {
                                 point: intersection.point,
                                 distance: distance,
                                 wall: alignmentB.wall,
                                 type: alignmentB.type,
+                                direction: alignmentB.direction,
                             });
                             alignmentA.hasIntersection = true;
                             alignmentB.hasIntersection = true;
@@ -239,6 +287,9 @@ class WallTool extends Tool {
             .ray.intersectPlane(this.world.activeLevel.floorPlane, new THREE.Vector3());
         let mousePos = intersection, snaps = null;
         this.ok = intersection && intersection.length() < 30;  // not too far from origin
+        if (this.debug) {
+            console.log(event.constructor.name, x, y, intersection);
+        }
         if(this.ok) {
             intersection.setY(this.world.activeLevel.floorPlane.constant);
             if (!event.shiftKey) {
@@ -288,9 +339,15 @@ class WallTool extends Tool {
             let startSnapTypes = "";  // printf debugging
             const startWallSplits = {};
             for (const snap of (this.startSnaps || [])) {
-                if (snap.type.startsWith("wall_align_") &&
-                    Math.abs(snap.wall.line.closestPointToPoint(this.startPoint, true, new THREE.Vector3()).distanceTo(this.startPoint)) <= epsilon) {
-                    startWallSplits[snap.wall.homeBuilderId] = snap.wall;
+                if (snap.type.startsWith("wall_align_")) {
+                    const distance = snap.wall.line.closestPointToPoint(this.startPoint, true, new THREE.Vector3()).distanceTo(this.startPoint);
+                    const split = snap.direction.angle === snap.wall.angle && distance <= epsilon;
+                    if (this.debug) {
+                        console.log("consider split start", snap.wall.homeBuilderId, snap.direction.angle, snap.wall.angle, distance, split);
+                    }
+                    if (split) {
+                        startWallSplits[snap.wall.homeBuilderId] = snap.wall;
+                    }
                 }
                 startSnapTypes += "|" + snap.type;
             }
@@ -298,6 +355,7 @@ class WallTool extends Tool {
             const endWallSplits = {};
             for (const snap of (this.endSnaps || [])) {
                 if (snap.type.startsWith("wall_align_") &&
+                    snap.direction.angle === snap.wall.angle &&
                     Math.abs(snap.wall.line.closestPointToPoint(this.endPoint, true, new THREE.Vector3()).distanceTo(this.endPoint)) <= epsilon) {
                     endWallSplits[snap.wall.homeBuilderId] = snap.wall;
                 }
@@ -320,10 +378,16 @@ class WallTool extends Tool {
     }
 
     onKeyDown(event) {
-        if (event.key === "Escape" && this.placingEnd && !(event.ctrlKey || event.altKey || event.shiftKey)) {
-            this.reset();
+        if (event.key === "Escape") {
+            if (this.debug) {
+                console.log("disabling extra debug logging for " + this.constructor.name);
+                this.debug = false;
+            } else if (this.placingEnd && !(event.ctrlKey || event.altKey || event.shiftKey)) {
+                this.reset();
+            }
+        } else if (event.key === "?") {
+            console.log("enabling extra debug logging for " + this.constructor.name);
+            this.debug = true;
         }
     }
 }
-
-export {WallTool};

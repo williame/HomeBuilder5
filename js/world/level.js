@@ -111,7 +111,7 @@ class Level {
 // DIRECTIONS ARE NOT NORMALIZED!
 class AngleYDirection extends THREE.Vector3 {
     constructor(angle) {
-        console.assert(angle === Math.round(angle), angle);
+        console.assert(angle === Math.round((angle + 360) % 360), angle);
         const rotated = new THREE.Vector2(10000).rotateAround(origin, THREE.MathUtils.degToRad(angle));
         super(rotated.x, 0, rotated.y);
         this.angle = angle;
@@ -119,7 +119,9 @@ class AngleYDirection extends THREE.Vector3 {
 }
 
 function lineToAngleY(start, end) {
-    return (Math.round(THREE.MathUtils.radToDeg(new THREE.Vector2(start.x - end.x, start.z - end.z).angle())) + 360) % 360;
+    const angle = (Math.round(THREE.MathUtils.radToDeg(new THREE.Vector2(start.x - end.x, start.z - end.z).angle())) + 360) % 360;
+    console.assert(angle >= 0 && angle < 360, start, end, angle);
+    return angle;
 }
 
 // Line intercept math by Paul Bourke http://paulbourke.net/geometry/pointlineplane/

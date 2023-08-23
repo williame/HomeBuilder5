@@ -40,6 +40,7 @@ export class GuideLine {
             // we raise it up very slightly so that it doesn't z-fight the grid
             start.clone().setY(start.y - 0.01),
             end.clone().setY(end.y - 0.01)]);
+        this.length = start.distanceTo(end);
         let label = this.prefix;
         if (this.showMeasurement) {
             const length = start.distanceTo(end);

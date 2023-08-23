@@ -4,7 +4,8 @@
 import * as THREE from 'three';
 import {deg90, epsilon} from "./world.js";
 import {Component} from "./Component.js";
-import {AngleYDirection, intersectY, lineToAngleY} from "./level.js";
+import {intersectY, lineToAngleY} from "./level.js";
+import {Capsule2, Polygon} from "./shapes.js";
 
 class Wall extends Component {
     height = 2.4;
@@ -33,12 +34,11 @@ class Wall extends Component {
         this.end = end;
         this.line.set(start, end);
         // set/check our angle
-        if (typeof this.angle === "undefined") {
-            this.angle = lineToAngleY(start, end);
-        } else {
-            console.assert(Math.abs(this.angle - lineToAngleY(start, end)) <= 1,
-                "angle too far", lineToAngleY(start, end), this);
-        }
+        const newAngle = lineToAngleY(start, end);
+        console.assert(typeof this.angle === "undefined" ||
+            Math.abs(this.angle - newAngle) <= 1,
+            "angle too far", newAngle, this.angle, this);
+        this.angle = newAngle;
         // create a collision capsule
         this.capsule = new Capsule2(this.start, this.end, this.width / 2, this.angle);
         // borrow the lines that the capsule has computed
@@ -46,6 +46,10 @@ class Wall extends Component {
         this.rightLine = this.capsule.rightLine;
         // trigger a rebuild of this wall and any others sharing any affected end-point
         this.level.updateWalls(this.start, this.end, oldStart, oldEnd);
+    }
+
+    isParallel(angle) {
+        return angle % 180 === this.angle % 180;
     }
 
     split(at) {
@@ -75,7 +79,7 @@ class Wall extends Component {
             const startStart = wall.start.equals(this.start), startEnd = !startStart && wall.end.equals(this.start);
             const endStart = wall.start.equals(this.end), endEnd = !endStart && wall.end.equals(this.end);
             if (startStart || startEnd || endStart || endEnd) {
-                if (wall.angle === this.angle || wall.angle === (this.angle + 180) % 360) {  // continues in same direction?
+                if (this.isParallel(wall.angle)) {  // continues in same direction?
                     leftStart = parallel(startStart || startEnd, leftStart, 0);
                     rightStart = parallel(startStart || startEnd, rightStart, 0);
                     leftEnd = parallel(endStart || endEnd, leftEnd, 1);
@@ -92,22 +96,15 @@ class Wall extends Component {
                 }
             }
         }
-        // build 2d outline on ground; this becomes the top of the shape
-        const shape = new THREE.Shape();
-        function shapeLineTo(point, def) {
-            if(point && point.point) {
-                shape.lineTo(point.point.x, point.point.z);
-            } else {
-                shape.lineTo(def.x, def.z);
-            }
-        }
-        shape.moveTo(this.start.x, this.start.z);
-        shapeLineTo(leftStart, this.leftLine.start);
-        shapeLineTo(leftEnd, this.leftLine.end);
-        shape.lineTo(this.end.x, this.end.z);
-        shapeLineTo(rightEnd, this.rightLine.end);
-        shapeLineTo(rightStart, this.rightLine.start);
-        shape.closePath();
+        // build 2d outline on ground;
+        this.polygon = new Polygon(this.start);
+        this.polygon.lineTo(leftStart && leftStart.point? leftStart.point: this.leftLine.start);
+        this.polygon.lineTo(leftEnd && leftEnd.point? leftEnd.point: this.leftLine.end);
+        this.polygon.lineTo(this.end);
+        this.polygon.lineTo(rightEnd && rightEnd.point? rightEnd.point: this.rightLine.end);
+        this.polygon.lineTo(rightStart && rightStart.point? rightStart.point: this.rightLine.start);
+        this.polygon.closePath();
+        const shape = this.polygon.toShape(); // this becomes the top of the shape, but needs rotating from the Y plane
 
         // build 3d geometry by extruding it
         const geometry = new THREE.ExtrudeGeometry(shape, {depth: this.height, bevelEnabled: false});
@@ -132,55 +129,6 @@ class Wall extends Component {
             this.addObject(new THREE.Line(new THREE.BufferGeometry().setFromPoints([this.leftLine.start, this.leftLine.end]), this.highlightEdgesMaterial));
             this.addObject(new THREE.Line(new THREE.BufferGeometry().setFromPoints([this.rightLine.start, this.rightLine.end]), this.highlightEdgesMaterial));
         }
-    }
-}
-
-class Capsule2 {
-    constructor(start, end, radius, angle) {
-        console.assert(start instanceof THREE.Vector3, typeof start, start);
-        console.assert(end instanceof THREE.Vector3, typeof end, end);
-        console.assert(typeof radius === "number", typeof radius, radius);
-        console.assert(typeof angle === "number", typeof angle, angle);
-        this.start = start;
-        this.end = end;
-        this.radius = radius;
-        if (typeof angle === "undefined") {
-            this.angle = lineToAngleY(start, end);
-        } else {
-            console.assert(Math.abs(angle - lineToAngleY(start, end)) <= 1,
-                "angle too far", lineToAngleY(start, end), this);
-            this.angle = angle;
-        }
-        const direction = new THREE.Vector3().subVectors(end, start);
-        this.normal = direction.clone().normalize();
-        direction.setLength(radius);
-        this.base = new THREE.Vector3().subVectors(start, direction);
-        this.tip = new THREE.Vector3().addVectors(end, direction);
-        const widthOffset = new AngleYDirection(this.angle + 90).setLength(this.radius);
-        this.line = new THREE.Line3(start, end);
-        this.leftLine = this.line.clone();
-        this.leftLine.start.sub(widthOffset);
-        this.leftLine.end.sub(widthOffset);
-        this.rightLine = this.line.clone();
-        this.rightLine.start.add(widthOffset);
-        this.rightLine.end.add(widthOffset);
-    }
-
-    toShape() {
-        const angleA = THREE.MathUtils.degToRad(this.angle - 90);
-        const angleB = THREE.MathUtils.degToRad(this.angle + 90);
-        const shape = new THREE.Shape();
-        shape.moveTo(this.leftLine.end.x, this.leftLine.end.z);
-        shape.absarc(this.end.x, this.end.z, this.radius, angleA, angleB, true);
-        shape.lineTo(this.rightLine.start.x, this.rightLine.start.z);
-        shape.absarc(this.start.x, this.start.z, this.radius, angleB, angleA, true);
-        shape.closePath();
-        return shape;
-    }
-
-    intersects(other) {
-        console.assert(other instanceof Capsule2, other);
-        return false; // TODO
     }
 }
 
