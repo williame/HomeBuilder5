@@ -55,7 +55,7 @@ export class WallTool extends Tool {
 
     updateGuides(mousePos, snaps=undefined) {
         const debug = this.debug;
-        const scene = this.worldView.scene;
+        const worldView = this.worldView;
         const guides = this.guides;
         const guidesByDirection = {};
         const hide = Object.keys(this.guides);
@@ -91,7 +91,7 @@ export class WallTool extends Tool {
                 if (debug) {
                     console.log("creating", directionKey || "(no direction)", name);
                 }
-                guides[name] = new GuideLine(scene, name, start, end, color);
+                guides[name] = new GuideLine(worldView, name, start, end, color);
             }
             if (directionKey) {
                 guidesByDirection[directionKey] = guides[name];
@@ -307,16 +307,15 @@ export class WallTool extends Tool {
         eventDup.y = y;
         this.#removeDebugObjects();
         // work out where the mouse is in the scene
-        const intersection = this.worldView.getMouseRay(event)
-            .ray.intersectPlane(this.world.activeLevel.floorPlane, new THREE.Vector3());
+        const intersection = this.world.activeLevel.getIntersectionWithFloorPlane(this.worldView.getMouseRay(event).ray);
         let mousePos = intersection, snaps = null;
-        this.ok = intersection && intersection.length() < 30;  // not too far from origin
+        this.ok = intersection && intersection.length() < this.world.view.maxExtent;  // not too far from origin
         if (this.debug) {
             console.log(event.constructor.name, x, y, intersection);
         }
         if(this.ok) {
             intersection.setY(this.world.activeLevel.floorPlane.constant);
-            const maxDistanceThreshold = 0.3;  // TODO work out size of pixel or something from camera projection
+            const maxDistanceThreshold = this.world.units.cm(30);  // TODO work out size of pixel or something from camera projection
             if (!event.shiftKey) {
                 const candidates = this.findSnapPoints(intersection, maxDistanceThreshold);
                 // do we have any candidates?
@@ -325,9 +324,10 @@ export class WallTool extends Tool {
                     candidates.sort((a, b) => a.distance - b.distance);
                     snaps = [];
                     for (const candidate of candidates) {
-                        if (candidate.point.distanceTo(candidates[0].point) <= 0.001) {  // really close...
-                            snaps.push(candidate);
+                        if (candidate.point.distanceTo(candidates[0].point) > this.world.units.mm(3)) {  // really close...
+                            break;
                         }
+                        snaps.push(candidate);
                     }
                     mousePos = snaps[0].point;
                 } else {
@@ -339,10 +339,10 @@ export class WallTool extends Tool {
             if (mousePos) {
                 // check to see if our wall intersects anything it shouldn't
                 if (this.placingEnd) {
-                    const footprint = new WallFootprint(undefined, this.world.activeLevel, this.startPoint, mousePos, Wall.defaultWidth);
+                    const footprint = new WallFootprint(undefined, this.world.activeLevel, this.startPoint, mousePos, this.world.defaults.wallWidth);
                     footprint.rebuild();
                     this.#addDebugObject({
-                        shape: shapeToWireframe(footprint.polygon.toShape(), Wall.defaultHeight - epsilon),
+                        shape: shapeToWireframe(footprint.polygon.toShape(), this.world.defaults.wallHeight - epsilon),
                         addToScene(scene) {
                             scene.add(this.shape);
                         },

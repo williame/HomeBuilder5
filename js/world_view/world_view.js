@@ -5,6 +5,8 @@ import {OrbitControls} from 'three/examples/jsm/controls/OrbitControls';
 import {CSS2DRenderer} from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import {WallTool} from "./wall_tool.js";
 import {SelectTool} from "./select_tool.js";
+import * as asserts from '../asserts.js';
+import {World} from "../world/world.js";
 
 const mousePos = new THREE.Vector2(), mouseRay = new THREE.Raycaster();
 
@@ -12,7 +14,7 @@ class WorldView {
     constructor(world) {
         this.render = this.render.bind(this);
 
-        this.world = world;
+        this.world = asserts.assertInstanceOf(world, World);
         this.world.views.push(this);
 
         this.pane = document.createElement("div");
@@ -23,24 +25,25 @@ class WorldView {
         this.scene = new THREE.Scene();
         this.scene.add(world.scene);  // nested scene of world
 
-        this.scene.add(new THREE.GridHelper(20, 20));
+        const gridScale = world.view.gridScale;
+        this.gridSize = 20;
+        this.scene.add(new THREE.GridHelper(this.gridSize * gridScale, this.gridSize));
 
-        this.scene.add(new THREE.AmbientLight( 'white', 0.2 ));
+        this.scene.add(new THREE.AmbientLight('white', 0.2));
         this.light = new THREE.DirectionalLight('white', 8);
-        this.light.position.set(1, 1, 100);
+        this.light.position.set(gridScale,  gridScale, 100 * gridScale);
         this.scene.add(this.light);
 
-        this.perspectiveCamera = new THREE.PerspectiveCamera(75, 1, 0.1, 100);
+        this.perspectiveCamera = new THREE.PerspectiveCamera(75, 1, 1, 100 * gridScale);
         this.perspectiveCamera.userData.name = "3D";
-        this.perspectiveCamera.position.set(7, 10, 8);
+        this.perspectiveCamera.position.set(0 * gridScale, 10 * gridScale, 5 * gridScale);
         this.orthographicCameraPlan = new THREE.OrthographicCamera();
         this.orthographicCameraPlan.userData.name = "2D";
-        this.orthographicCameraPlan.position.setY(100);  // plan view looking down
+        this.orthographicCameraPlan.position.setY(100 * gridScale);  // plan view looking down
         this.orthographicCameras = [this.orthographicCameraPlan];
         this.cameras = [...this.orthographicCameras, this.perspectiveCamera];
 
         // create renderers
-
         this.renderer = new THREE.WebGLRenderer({antialias: true});
         this.renderer.setClearColor("dimgray");
         this.pane.appendChild(this.renderer.domElement);
@@ -129,14 +132,14 @@ class WorldView {
         const height = this.pane.offsetHeight;
         this.perspectiveCamera.aspect = width / (height || 1);
         this.perspectiveCamera.updateProjectionMatrix();
-        const camFactor = 100;
+        const gridScale = this.world.view.gridScale, camFactor = 0.2;
         for (const orthographicCamera of this.orthographicCameras) {
             orthographicCamera.left = -width / camFactor;
             orthographicCamera.right = width / camFactor;
             orthographicCamera.top = height / camFactor;
             orthographicCamera.bottom = -height / camFactor;
-            orthographicCamera.near = 0.1;
-            orthographicCamera.far = 1000;
+            orthographicCamera.near = 1;
+            orthographicCamera.far = 1000 * gridScale;
             orthographicCamera.updateProjectionMatrix();
         }
         this.pane.style.width = width + "px";

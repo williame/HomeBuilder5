@@ -9,8 +9,6 @@ import * as asserts from "../asserts.js";
 import {CommandHandler, Serialize} from "./edit_log.js";
 
 export class Wall extends Component {
-    static defaultHeight = 2.4;
-    static defaultWidth = 0.4;
 
     constructor(level, homeBuilderId) {
         super(level, homeBuilderId);
@@ -93,8 +91,8 @@ export class WallFootprint extends ParallelLines {
     constructor(wall, level, start, end, width, angle=undefined) {
         asserts.assertInstanceOf(wall, Wall, true);
         asserts.assertInstanceOf(level, Level);
-        asserts.assertNumber(width);
-        asserts.assertNumber(angle, true);
+        asserts.assertNumber(width, false, "width");
+        asserts.assertNumber(angle, true, "angle");
         super(start, end, width, angle);
         this.wall = wall;
         this.level = level;
@@ -125,8 +123,8 @@ export class WallFootprint extends ParallelLines {
             if (wall === this.wall) {
                 continue;
             }
-            const startStart = wall.start.equals(this.start), startEnd = !startStart && wall.end.equals(this.start);
-            const endStart = wall.start.equals(this.end), endEnd = !endStart && wall.end.equals(this.end);
+            const startStart = wall.start.equals(this.start), startEnd = wall.end.equals(this.start);
+            const endStart = wall.start.equals(this.end), endEnd = wall.end.equals(this.end);
             if (startStart || startEnd || endStart || endEnd) {
                 if (this.isParallel(wall.angle)) {  // continues in same direction?
                     leftStart = parallel(startStart || startEnd, leftStart, 0);
@@ -211,8 +209,8 @@ export function createWall(level, start, end, angle=undefined, width=undefined, 
             start: Serialize.fromVector3(start),
             end: Serialize.fromVector3(end),
             angle: asserts.isUndefined(angle)? null: asserts.assertNumber(angle),
-            width: asserts.isUndefined(width)? Wall.defaultWidth: asserts.assertNumber(width),
-            height: asserts.isUndefined(height)? Wall.defaultHeight: asserts.assertNumber(height),
+            width: asserts.isUndefined(width)? level.world.defaults.wallWidth: asserts.assertNumber(width),
+            height: asserts.isUndefined(height)? level.world.defaults.wallHeight: asserts.assertNumber(height),
         }), Wall);
 }
 

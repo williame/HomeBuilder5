@@ -2,9 +2,12 @@
 
 import * as THREE from "three";
 import {CSS2DObject} from "three/examples/jsm/renderers/CSS2DRenderer.js";
+import * as asserts from "../asserts.js";
+import {WorldView} from "./world_view.js";
 
 export class GuideLine {
-    constructor(scene, name, start, end, color, prefix = "", showMeasurement = true, showStartDot = true) {
+    constructor(worldView, name, start, end, color, prefix = "", showMeasurement = true, showStartDot = true) {
+        this.world = asserts.assertInstanceOf(worldView, WorldView).world;
         this.name = name;
         this.line = new THREE.Line(
             new THREE.BufferGeometry(),
@@ -29,7 +32,7 @@ export class GuideLine {
         }
         this.showStartDot = showStartDot;
         this.update(start, end);
-        scene.add(this.line);
+        worldView.scene.add(this.line);
     }
 
     update(start, end, color = null) {
@@ -47,7 +50,7 @@ export class GuideLine {
                 if (label.length) {
                     label += " ";
                 }
-                label += Number(length.toFixed(2));
+                label += this.world.units.toPrecision(length);
             }
         }
         if (label.length) {

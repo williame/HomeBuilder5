@@ -104,8 +104,15 @@ export function assertInstanceOf(obj, clz, canBeUndefined=false) {
 }
 
 export function assertNumber(val, canBeUndefined=false) {
-    if(!((canBeUndefined && isUndefined(val)) || typeof val === "number") || Number.isNaN(val)) {
-        fail("expected number, got " + (Number.isNaN(val)? "NaN": getClassNameOrType(val)), val, ...shiftArguments(arguments, 2));
+    if(!((canBeUndefined && isUndefined(val)) || Number.isFinite(val))) {
+        fail("expected number, got " + (Number.isNaN(val)? "NaN": !Number.isFinite(val)? "inf": getClassNameOrType(val)), val, ...shiftArguments(arguments, 2));
+    }
+    return val;
+}
+
+export function assertInt(val, canBeUndefined=false) {
+    if(!((canBeUndefined && isUndefined(val)) || Number.isInteger(val))) {
+        fail("expected int, got " + (Number.isNaN(val)? "NaN": !Number.isFinite(val)? "inf": getClassNameOrType(val)), val, ...shiftArguments(arguments, 2));
     }
     return val;
 }

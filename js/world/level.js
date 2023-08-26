@@ -100,13 +100,18 @@ export class Level {
             this.walls.removeComponent(component);
         }
     }
+
+    getIntersectionWithFloorPlane(ray) {
+        const intersection = ray.intersectPlane(this.world.activeLevel.floorPlane, new THREE.Vector3());
+        return intersection? intersection.round(): false;
+    }
 }
 
 // DIRECTIONS ARE NOT NORMALIZED!
 export class AngleYDirection extends THREE.Vector3 {
     constructor(angle) {
         asserts.assertTruthiness(angle === Math.round((angle + 360) % 360), "bad angle", angle);
-        const rotated = new THREE.Vector2(10000).rotateAround(origin, THREE.MathUtils.degToRad(angle));
+        const rotated = new THREE.Vector2(1000000).rotateAround(origin, THREE.MathUtils.degToRad(angle));
         super(rotated.x, 0, rotated.y);
         this.angle = angle;
     }
