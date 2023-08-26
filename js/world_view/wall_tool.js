@@ -2,11 +2,12 @@
 
 import * as THREE from 'three';
 import * as asserts from '../asserts.js';
-import {Wall} from '../world/wall.js';
+import {createWall, splitWall, Wall, WallFootprint} from '../world/wall.js';
 import {Tool} from "./tool.js";
 import {AngleYDirection, intersectY} from "../world/level.js";
 import {epsilon} from "../world/world.js";
 import {createDot, GuideLine} from "./guide_line.js";
+import {shapeToWireframe} from "../world/shapes.js";
 
 export class WallTool extends Tool {
 
@@ -18,9 +19,12 @@ export class WallTool extends Tool {
         this.mousePos = null;
         this.guides = {};
         this.debug = false;
+        this.debugObjects = [];
+        this.editTransactionId = null;
     }
 
     reset() {
+        this.#removeDebugObjects();
         this.placingEnd = false;
         this.ok = false;
         this.startPoint = this.mousePos? this.mousePos.clone(): new THREE.Vector3();
@@ -31,6 +35,11 @@ export class WallTool extends Tool {
             guide.removeFromParent();
         }
         this.guides = {}
+        this.eventDup = {};
+        if (this.editTransactionId !== null) {
+            this.world.editLog.rollback(this.editTransactionId);
+            this.editTransactionId = null;
+        }
         this.worldView.needsUpdate();
     }
 
@@ -51,7 +60,7 @@ export class WallTool extends Tool {
         const guidesByDirection = {};
         const hide = Object.keys(this.guides);
         function addGuide(name, start, end, color, direction) {
-            asserts.assertTrue(start && end, name, start, end);
+            asserts.assertTruthiness(start && end, name, start, end);
             asserts.assertInstanceOf(direction, AngleYDirection, true, name);
             const directionKey = direction? "angle=" + direction.angle: false;
             const existing = directionKey? guidesByDirection[directionKey]: false;
@@ -149,7 +158,7 @@ export class WallTool extends Tool {
                     continuation.distance = distance;
                 }
             }
-            asserts.assertTrue(continuation);
+            asserts.assertTruthiness(continuation);
             point = continuation.point;
         }
         // first search for a really close-by wall end, gathering wallAlignments as we go
@@ -165,6 +174,7 @@ export class WallTool extends Tool {
                         distance: distance,
                         wall: wall,
                         type: "wall_" + typeSuffix,
+                        isWallSnap: true,
                     });
                     hasWallSnaps = true;
                 }
@@ -207,12 +217,14 @@ export class WallTool extends Tool {
                         wall: wall,
                         direction: new AngleYDirection(wall.angle),
                         type: "wall_align_start",
+                        isWallSnap: true,
                     }, {
                         point: snapPoint,
                         distance: distance,
                         wall: wall,
                         direction: new AngleYDirection((wall.angle + 180) % 360),
                         type: "wall_align_end",
+                        isWallSnap: true,
                     });
                     hasWallSnaps = true;
                 }
@@ -280,9 +292,21 @@ export class WallTool extends Tool {
     }
 
     onMouseMove(event) {
-        const maxDistanceThreshold = 0.3;  // TODO work out size of pixel or something from camera projection
         let x = event.clientX - this.worldView.pane.offsetLeft;
         let y = event.clientY - this.worldView.pane.offsetTop;
+        // dedupe events; we often get flurries of events that don't move the cursor enough to change our choices
+        const eventDup = this.eventDup;
+        if (eventDup.type === event.constructor.name &&
+            eventDup.shiftKey === event.shiftKey &&
+            eventDup.x === x && eventDup.y === y) {
+            return;
+        }
+        eventDup.type = event.constructor.name;
+        eventDup.shiftKey = event.shiftKey;
+        eventDup.x = x;
+        eventDup.y = y;
+        this.#removeDebugObjects();
+        // work out where the mouse is in the scene
         const intersection = this.worldView.getMouseRay(event)
             .ray.intersectPlane(this.world.activeLevel.floorPlane, new THREE.Vector3());
         let mousePos = intersection, snaps = null;
@@ -292,15 +316,16 @@ export class WallTool extends Tool {
         }
         if(this.ok) {
             intersection.setY(this.world.activeLevel.floorPlane.constant);
+            const maxDistanceThreshold = 0.3;  // TODO work out size of pixel or something from camera projection
             if (!event.shiftKey) {
                 const candidates = this.findSnapPoints(intersection, maxDistanceThreshold);
                 // do we have any candidates?
                 if (candidates.length) {
                     // reduce to those snaps for the closest point
+                    candidates.sort((a, b) => a.distance - b.distance);
+                    snaps = [];
                     for (const candidate of candidates) {
-                        if (snaps === null || candidate.distance < snaps[0].distance) {
-                            snaps = [candidate];
-                        } else if (candidate.point.distanceTo(snaps[0].point) <= 0.001) {  // really close...
+                        if (candidate.point.distanceTo(candidates[0].point) <= 0.001) {  // really close...
                             snaps.push(candidate);
                         }
                     }
@@ -312,6 +337,49 @@ export class WallTool extends Tool {
                 mousePos = intersection;
             }
             if (mousePos) {
+                // check to see if our wall intersects anything it shouldn't
+                if (this.placingEnd) {
+                    const footprint = new WallFootprint(undefined, this.world.activeLevel, this.startPoint, mousePos, Wall.defaultWidth);
+                    footprint.rebuild();
+                    this.#addDebugObject({
+                        shape: shapeToWireframe(footprint.polygon.toShape(), Wall.defaultHeight - epsilon),
+                        addToScene(scene) {
+                            scene.add(this.shape);
+                        },
+                        removeFromParent() {
+                            this.shape.removeFromParent();
+                        },
+                    });
+                    const wallEnds = {};
+                    for (const _ of [this.startSnaps, snaps]) {
+                        for (const snap of (_ || [])) {
+                            if (snap.isWallSnap) {
+                                wallEnds[snap.wall.homeBuilderId] = snap.wall;
+                            }
+                        }
+                    }
+                    const collisions = {};
+                    for (const wall of this.world.activeLevel.walls.values) {
+                        if (!wallEnds.hasOwnProperty(wall.homeBuilderId) && footprint.intersects(wall)) {
+                            collisions[wall.homeBuilderId] = wall;
+                            this.ok = false;
+                        }
+                    }
+                    if (Object.keys(collisions).length) {
+                        for (const wall of Object.values(collisions)) {
+                            this.#addDebugObject({
+                                wall: wall,
+                                addToScene() {
+                                    this.wall.setHighlighted(true);
+                                },
+                                removeFromParent() {
+                                    this.wall.setHighlighted(false);
+                                }
+                            });
+                        }
+                        this.ok = false;
+                    }
+                }
                 // work out screen position
                 const point = mousePos.clone().project(this.worldView.camera);
                 x = (point.x + 1) * this.worldView.pane.clientWidth / 2;
@@ -326,50 +394,52 @@ export class WallTool extends Tool {
     }
 
     onMouseDown() {
-        asserts.assertFalse(this.placingEnd);
+        asserts.assertFalsiness(this.placingEnd);
         if (this.mousePos) {
             this.placingEnd = true;
             this.updateGuides(this.mousePos);
         }
+        asserts.assertNull(this.editTransactionId);
+        this.editTransactionId = this.world.editLog.begin("wall_tool");
     }
 
-    onMouseUp() {
+    onMouseUp(event) {
         if (this.mousePos && this.placingEnd && this.ok) {
-            new Wall(this.world, this.startPoint, this.endPoint);  // will add itself to world
+            createWall(this.world.activeLevel, this.startPoint, this.endPoint);  // will add itself to world
             let startSnapTypes = "";  // printf debugging
             const startWallSplits = {};
             for (const snap of (this.startSnaps || [])) {
-                if (snap.type.startsWith("wall_align_")) {
-                    const distance = snap.wall.line.closestPointToPoint(this.startPoint, true, new THREE.Vector3()).distanceTo(this.startPoint);
-                    const split = snap.direction.angle === snap.wall.angle && distance <= epsilon;
+                if (snap.isWallSnap && snap.type.startsWith("wall_align_") && snap.direction.angle === snap.wall.angle) {
                     if (this.debug) {
-                        console.log("consider split start", snap.wall.homeBuilderId, snap.direction.angle, snap.wall.angle, distance, split);
+                        console.log("split start", snap.wall.homeBuilderId, snap.direction.angle, snap.wall.angle);
                     }
-                    if (split) {
-                        startWallSplits[snap.wall.homeBuilderId] = snap.wall;
-                    }
+                    startWallSplits[snap.wall.homeBuilderId] = snap.wall;
                 }
                 startSnapTypes += "|" + snap.type;
             }
             let endSnapTypes = "";
             const endWallSplits = {};
             for (const snap of (this.endSnaps || [])) {
-                if (snap.type.startsWith("wall_align_") &&
-                    snap.direction.angle === snap.wall.angle &&
-                    Math.abs(snap.wall.line.closestPointToPoint(this.endPoint, true, new THREE.Vector3()).distanceTo(this.endPoint)) <= epsilon) {
+                if (snap.isWallSnap && snap.type.startsWith("wall_align_") && snap.direction.angle === snap.wall.angle) {
+                    if (this.debug) {
+                        console.log("split end", snap.wall.homeBuilderId, snap.direction.angle, snap.wall.angle);
+                    }
                     endWallSplits[snap.wall.homeBuilderId] = snap.wall;
                 }
                 endSnapTypes += "|" + snap.type;
             }
             console.log("" + (startSnapTypes.substring(1) || null) + " --> " + (endSnapTypes.substring(1) || null), startWallSplits);
             for (const wall of Object.values(startWallSplits)) {
-                wall.split(this.startPoint);
+                splitWall(wall, this.startPoint);
             }
             for (const wall of Object.values(endWallSplits)) {
-                wall.split(this.endPoint);
+                splitWall(wall, this.endPoint);
             }
+            this.world.editLog.commit(this.editTransactionId);
+            this.editTransactionId = null;
         }
         this.reset();
+        this.onMouseMove(event);
     }
 
     onMouseOut() {
@@ -389,5 +459,19 @@ export class WallTool extends Tool {
             console.log("enabling extra debug logging for " + this.constructor.name);
             this.debug = true;
         }
+    }
+
+    #addDebugObject(obj) {
+        if (obj instanceof THREE.Object3D) {
+            this.worldView.scene.add(obj);
+        } else {
+            obj.addToScene(this.worldView.scene);
+        }
+        this.debugObjects.push(obj);
+    }
+
+    #removeDebugObjects() {
+        this.debugObjects.map(_ => _.removeFromParent());
+        this.debugObjects = [];
     }
 }

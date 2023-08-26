@@ -2,17 +2,18 @@
 
 import * as THREE from 'three';
 import * as asserts from '../asserts.js';
-import {ComponentCollection} from "./Component.js";
+import {ComponentCollection} from "./component.js";
 import {Wall} from "./wall.js";
-import {origin} from "./world.js";
-import {assertInstanceOf} from "../asserts.js";
+import {origin, World} from "./world.js";
 
-class Level {
+export class Level {
 
-    constructor(world, y) {
-        this.world = world;
-        this.homeBuilderId = this.constructor.name + "_" + ++world.homeBuilderIdSeq;
-        this.y = y;
+    static IDPrefix = "level";
+
+    constructor(world, homeBuilderId, y=0) {
+        this.world = asserts.assertInstanceOf(world, World);
+        this.homeBuilderId = asserts.assertHomeBuilderId(homeBuilderId, Level.IDPrefix);
+        this.y = asserts.assertNumber(y);
         this.floorPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), y);
         this.components = new ComponentCollection();
         this.walls = new ComponentCollection();
@@ -48,7 +49,7 @@ class Level {
         // if we are passed a list of 'dirty' wall end-points, rebuild all walls that share those ends
         if (arguments.length) {
             for (const end of arguments) {
-                assertInstanceOf(end, THREE.Vector3, true);
+                asserts.assertInstanceOf(end, THREE.Vector3, true);
             }
             for (const wall of this.walls.values) {
                 for (const end of arguments) {
@@ -102,25 +103,25 @@ class Level {
 }
 
 // DIRECTIONS ARE NOT NORMALIZED!
-class AngleYDirection extends THREE.Vector3 {
+export class AngleYDirection extends THREE.Vector3 {
     constructor(angle) {
-        asserts.assertTrue(angle === Math.round((angle + 360) % 360), "bad angle", angle);
+        asserts.assertTruthiness(angle === Math.round((angle + 360) % 360), "bad angle", angle);
         const rotated = new THREE.Vector2(10000).rotateAround(origin, THREE.MathUtils.degToRad(angle));
         super(rotated.x, 0, rotated.y);
         this.angle = angle;
     }
 }
 
-function lineToAngleY(start, end) {
+export function lineToAngleY(start, end) {
     const angle = (Math.round(THREE.MathUtils.radToDeg(new THREE.Vector2(start.x - end.x, start.z - end.z).angle())) + 360) % 360;
-    asserts.assertTrue(angle >= 0 && angle < 360, "bad angle", start, end, angle);
+    asserts.assertTruthiness(angle >= 0 && angle < 360, "bad angle", start, end, angle);
     return angle;
 }
 
 // Line intercept math by Paul Bourke http://paulbourke.net/geometry/pointlineplane/
 // Determine the intersection point of two 2D/3D lines on the 3D Y plane
 // Return null if no intersection and false if the lines are parallel
-function intersectY(startA, endA, startB, endB, infiniteLines = true) {
+export function intersectY(startA, endA, startB, endB, infiniteLines = true) {
     const is2D = startA instanceof THREE.Vector2;
     // map three.js z to 2D x y
     const x1 = startA.x, y1 = is2D? startA.y: startA.z, x2 = endA.x, y2 = is2D? endA.y: endA.z;
@@ -151,5 +152,3 @@ function intersectY(startA, endA, startB, endB, infiniteLines = true) {
         inB: uB >= 0 && uB <= 1,
     };
 }
-
-export {Level, intersectY, lineToAngleY, AngleYDirection};

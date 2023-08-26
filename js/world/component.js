@@ -5,11 +5,11 @@ import * as asserts from '../asserts.js';
 
 export class Component {
 
-    constructor(world) {
-        this.world = world;
-        this.homeBuilderId = this.constructor.name + "_" + ++world.homeBuilderIdSeq;
+    constructor(level, homeBuilderId) {
+        this.world = level.world;
+        this.homeBuilderId = homeBuilderId;
         this.world.addComponent(this);
-        this.level = world.activeLevel;
+        this.level = level;
         this.level.addComponent(this);
         this.objects = {};
         this.isHighlighted = false;
@@ -65,7 +65,7 @@ export class ComponentCollection {
 
     addComponent(component) {
         asserts.assertInstanceOf(component, Component);
-        asserts.assertFalse(this.components.hasOwnProperty(component.homeBuilderId), "Component add twice", component);
+        asserts.assertFalsiness(this.components.hasOwnProperty(component.homeBuilderId), "Component add twice", component);
         this.components[component.homeBuilderId] = component;
         this.#updateIterators();
     }

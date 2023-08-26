@@ -1,22 +1,33 @@
 /* (c) William Edwards 2023 */
 
 import * as THREE from 'three';
-import {deg90, epsilon, World} from "./world.js";
-import {Component} from "./Component.js";
+import {deg90, epsilon} from "./world.js";
+import {Component} from "./component.js";
 import {intersectY, Level, lineToAngleY} from "./level.js";
 import {ParallelLines, Polygon} from "./shapes.js";
 import * as asserts from "../asserts.js";
+import {CommandHandler, Serialize} from "./edit_log.js";
 
 export class Wall extends Component {
-    height = 2.4;
-    width = 0.4;
-    highlightMaterial = new THREE.MeshStandardMaterial({color: 0xff3030});
-    highlightEdgesMaterial = new THREE.LineBasicMaterial({color: 0xffc0c0});
+    static defaultHeight = 2.4;
+    static defaultWidth = 0.4;
 
-    constructor(world, start, end, angle) {
-        asserts.assertInstanceOf(world, World);
-        super(world);
-        this.angle = angle;
+    constructor(level, homeBuilderId) {
+        super(level, homeBuilderId);
+        asserts.assertInstanceOf(this, WallImpl, false, "Wall implementation is private");
+    }
+}
+
+class WallImpl extends Wall {
+    static IDPrefix = "wall";
+    static highlightMaterial = new THREE.MeshStandardMaterial({color: 0xff3030});
+    static highlightEdgesMaterial = new THREE.LineBasicMaterial({color: 0xffc0c0});
+
+    constructor(level, homeBuilderId, start, end, angle, width, height) {
+        super(asserts.assertInstanceOf(level, Level), asserts.assertHomeBuilderId(homeBuilderId, WallImpl.IDPrefix));
+        this.angle = asserts.assertNumber(angle, true);
+        this.width = asserts.assertNumber(width);
+        this.height = asserts.assertNumber(height);
         this.line = new THREE.Line3();
         this.color = new THREE.Color(Math.random() * 0.3 + 0.2, Math.random() * 0.3 + 0.2, Math.random() * 0.3 + 0.2);
         this.material = new THREE.MeshStandardMaterial({color: this.color.getHex()});
@@ -28,6 +39,18 @@ export class Wall extends Component {
         this.level.updateWalls(this.start, this.end);
     }
 
+    setWidth(width) {
+        asserts.assertNumber(width);
+        this.width = width;
+        this.triggerUpdate();
+    }
+
+    setHeight(height) {
+        asserts.assertNumber(width);
+        this.height = height;
+        this.rebuild();
+    }
+
     set(start, end) {
         const oldStart = this.start, oldEnd = this.end;
         // create our centerline
@@ -36,7 +59,7 @@ export class Wall extends Component {
         this.line.set(start, end);
         // set/check our angle
         const newAngle = lineToAngleY(start, end);
-        asserts.assertTrue(typeof this.angle === "undefined" ||
+        asserts.assertTruthiness(typeof this.angle === "undefined" ||
             Math.abs(this.angle - newAngle) <= 1,
             "angle too far", newAngle, this.angle, this);
         this.angle = newAngle;
@@ -46,25 +69,23 @@ export class Wall extends Component {
         } else {
             this.footprint = new WallFootprint(this, this.level, this.start, this.end, this.width, this.angle);
         }
-        // trigger a rebuild of this wall and any others sharing any affected end-point
-        this.level.updateWalls(this.start, this.end, oldStart, oldEnd);
+        this.triggerUpdate(oldStart, oldEnd);
     }
 
-    split(at) {
-        asserts.assertTrue(Math.abs(this.line.closestPointToPoint(at, true, new THREE.Vector3()).distanceTo(at)) <= epsilon, this, at);
-        asserts.assertTrue(!at.equals(this.start) && !at.equals(this.end), this, at);
-        new Wall(this.world, this.start, at, this.angle);
-        this.set(at, this.end);
+    triggerUpdate(oldStart, oldEnd) {
+        // trigger a rebuild of this wall and any others sharing any affected end-point
+        this.level.updateWalls(this.start, this.end, oldStart, oldEnd);
     }
 
     rebuild() {
         this.removeAllObjects();
         this.footprint.rebuild(); // force recomputing the footprint as walls sharing the ends may have changed
         // build 3d geometry by extruding the footprint polygon
-        this.addObject(this.footprint.toMesh(this.height, this.isHighlighted? this.highlightMaterial: this.material));
+        this.addObject(this.footprint.toMesh(this.height, this.isHighlighted? Wall.highlightMaterial: this.material));
         if (this.isHighlighted) {
-            this.addObject(this.footprint.toMesh(this.height, this.highlightEdgesMaterial, true));
+            this.addObject(this.footprint.toMesh(this.height, Wall.highlightEdgesMaterial, true));
         }
+        // debug // this.addObject(shapeToWireframe(this.footprint.boundingRect.toShape(), this.start.y));
     }
 }
 
@@ -132,6 +153,7 @@ export class WallFootprint extends ParallelLines {
         this.polygon.lineTo(rightEnd && rightEnd.point? rightEnd.point: this.rightLine.end);
         this.polygon.lineTo(rightStart && rightStart.point? rightStart.point: this.rightLine.start);
         this.polygon.closePath();
+        this.boundingRect = this.polygon.toBoundingRect();
     }
 
     toMesh(height, material, wireframe=false) {
@@ -145,9 +167,86 @@ export class WallFootprint extends ParallelLines {
         return mesh;
     }
 
-    intersects(wall) {
-        asserts.assertInstanceOf(wall, Wall);
-        return this.wall === wall? false: this.polygon.intersects(wall.polygon);
+    intersects(wall, hitListener=undefined) {
+        asserts.assertInstanceOf(wall, [Wall, WallFootprint]);
+        asserts.assertInstanceOf(this.polygon, Polygon, false, "wall footprint hasn't been built");
+        const isWall = wall instanceof Wall;
+        const boundingRect = isWall? wall.footprint.boundingRect: wall.boundingRect;
+        const polygon = isWall? wall.footprint.polygon: wall.polygon;
+        return wall !== (isWall? this.wall: this) &&
+            this.boundingRect.intersects(boundingRect) &&
+            this.polygon.intersects(polygon, hitListener);
+    }
+}
+
+class WallCommand extends CommandHandler {
+    getLevel(homeBuilderId) {
+        return asserts.assertInstanceOf(this.world.levels[asserts.assertHomeBuilderId(homeBuilderId, Level.IDPrefix)], Level);
     }
 
+    getWall(homeBuilderId) {
+        return asserts.assertInstanceOf(this.world.getComponent(asserts.assertHomeBuilderId(homeBuilderId, WallImpl.IDPrefix)), WallImpl);
+    }
+}
+
+class CreateWallCommand extends WallCommand {
+    execute(command) {
+        return new WallImpl(this.getLevel(command.level),
+            asserts.assertHomeBuilderId(command.id, WallImpl.IDPrefix),
+            Serialize.toVector3(command.start), Serialize.toVector3(command.end),
+            command.angle === null? undefined: asserts.assertNumber(command.angle),
+            asserts.assertNumber(command.width), asserts.assertNumber(command.height));
+    }
+
+    undo(command) {
+        asserts.assertInstanceOf(this.world.getComponent(asserts.assertHomeBuilderId(command.id, WallImpl.IDPrefix)), WallImpl).destroy();
+    }
+}
+
+export function createWall(level, start, end, angle=undefined, width=undefined, height=undefined) {
+    return asserts.assertInstanceOf(
+        level.world.editLog.commandHandlers["CreateWallCommand"].add({
+            id: level.world.generateHomeBuilderId(WallImpl.IDPrefix),
+            level: asserts.assertInstanceOf(level, Level).homeBuilderId,
+            start: Serialize.fromVector3(start),
+            end: Serialize.fromVector3(end),
+            angle: asserts.isUndefined(angle)? null: asserts.assertNumber(angle),
+            width: asserts.isUndefined(width)? Wall.defaultWidth: asserts.assertNumber(width),
+            height: asserts.isUndefined(height)? Wall.defaultHeight: asserts.assertNumber(height),
+        }), Wall);
+}
+
+class SplitWallCommand extends WallCommand {
+    execute(command) {
+        const wall = this.getWall(command.id);
+        const newId = asserts.assertHomeBuilderId(command.newId, WallImpl.IDPrefix);
+        const at = Serialize.toVector3(command.at);
+        asserts.assertTrue(Math.abs(wall.line.closestPointToPoint(at, true, new THREE.Vector3()).distanceTo(at)) <= epsilon, wall, at);
+        asserts.assertTrue(!at.equals(wall.start) && !at.equals(wall.end), wall, at);
+        const start = wall.start;
+        asserts.assertTrue(start.equals(wall.start));
+        wall.set(at, wall.end);
+        return new WallImpl(wall.level, newId, start, at, wall.angle, wall.width, wall.height);
+    }
+
+    undo(command) {
+        const wall = this.getWall(command.id);
+        const newWall = this.getWall(command.newId);
+        wall.set(newWall.start, wall.end);
+        newWall.destroy();
+    }
+}
+
+export function splitWall(wall, at) {
+    return asserts.assertInstanceOf(
+        asserts.assertInstanceOf(wall, Wall).world.editLog.commandHandlers["SplitWallCommand"].add({
+            id: wall.homeBuilderId,
+            newId: wall.world.generateHomeBuilderId(WallImpl.IDPrefix),
+            at: Serialize.fromVector3(at),
+        }), Wall);
+}
+
+export function registerWallCommands(world) {
+    new CreateWallCommand(world);
+    new SplitWallCommand(world);
 }
