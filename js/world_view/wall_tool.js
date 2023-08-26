@@ -458,6 +458,8 @@ export class WallTool extends Tool {
         } else if (event.key === "?") {
             console.log("enabling extra debug logging for " + this.constructor.name);
             this.debug = true;
+        } else {
+            super.onKeyDown(event);
         }
     }
 

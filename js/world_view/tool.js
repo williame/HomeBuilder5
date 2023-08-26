@@ -27,6 +27,31 @@ class Tool {
             (name.startsWith("key")? document: view).removeEventListener(name, listener);
         }
     }
+
+    onKeyDown(event) {
+        // implement default shortcut key combos
+        let swallowEvent = true;
+        if (event.code === "KeyZ" && (event.ctrlKey || event.metaKey)) {
+            if (this.world.editLog.canUndo()) {
+                this.world.editLog.undo();
+            } else {
+                console.log("(cannot undo)");
+            }
+        } else if (event.code === "KeyY" && (event.ctrlKey || event.metaKey)) {
+            if (this.world.editLog.canRedo()) {
+                this.world.editLog.redo();
+            } else {
+                console.log("(cannot redo)");
+            }
+        } else {
+            console.log("tool unhandled on-key-down", event);
+            swallowEvent = false;
+        }
+        if (swallowEvent) {
+            event.stopPropagation();
+            event.preventDefault();
+        }
+    }
 }
 
 export {Tool}

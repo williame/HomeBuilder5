@@ -64,7 +64,6 @@ export class EditLog {
     begin(name) {
         asserts.assertString(asserts.assertTruthiness(name));
         asserts.assertFalse(this.inTransaction, "begin(" + name + ") in open transaction");
-        console.log("begin(" + name + ") at " + this.length);
         this.log.length = this.length;
         const marker = new TransactionMarker(name);
         this.log.push(marker);
@@ -97,6 +96,38 @@ export class EditLog {
         return action.execute();
     }
 
+    canUndo() {
+        return !this.inTransaction && this.length;
+    }
+
+    undo() {
+        asserts.assertFalse(this.inTransaction, "undo() cannot occur in open transaction");
+        asserts.assertTruthiness(this.length, "nothing to undo()");
+        while (this.length --> 0) {
+            const entry = this.log[this.length];
+            if (entry instanceof TransactionMarker) {
+                break;
+            }
+            asserts.assertInstanceOf(entry, EditAction).undo();
+        }
+    }
+
+    canRedo() {
+        return !this.inTransaction && this.length < this.log.length;
+    }
+
+    redo() {
+        asserts.assertFalse(this.inTransaction, "redo() cannot occur in open transaction");
+        asserts.assertTruthiness(this.length < this.log.length, "nothing to redo()");
+        while (++this.length < this.log.length) {
+            const entry = this.log[this.length];
+            if (entry instanceof TransactionMarker) {
+                break;
+            }
+            asserts.assertInstanceOf(entry, EditAction).execute();
+        }
+    }
+
     commit(id) {
         asserts.assertTrue(this.inTransaction, "commit(" + id + ") not in open transaction");
         asserts.assertTrue(this.length === this.log.length, "internal error: length " + this.length + " != " + this.log.length);
@@ -115,12 +146,12 @@ export class EditLog {
         while (this.length --> 0) {
             const entry = this.log[this.length];
             if (entry instanceof TransactionMarker) {
-                asserts.assertTrue(id === entry.id, id, entry.name, entry.id);
+                asserts.assertTrue(id === entry.id, "expected " + id + ", got " + entry.id + "," + entry.name);
                 break;
             }
-            asserts.assertInstanceOf(entry, EditAction);
-            entry.undo();
+            asserts.assertInstanceOf(entry, EditAction).undo();
         }
+        this.log.length = this.length;
         this.inTransaction = false;
     }
 }
